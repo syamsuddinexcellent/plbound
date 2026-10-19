@@ -1,0 +1,15 @@
+# Whitelist: only code, numerical results and documentation are tracked.
+# The manuscript, submission files, correspondence and the NIST data stay out of the repository.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/code/
+!/results/
+!/data/
+/data/*
+!/data/README.md
+/results/log_*.txt
+__pycache__/
+*.pyc
+.DS_Store
