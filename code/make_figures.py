@@ -64,8 +64,8 @@ def fig1_heatmaps():
     save(fig, "Fig1.pdf")
 
 
-def fig2_transposition():
-    """ROC transposition under covariance swap (Proposition 4) and the two loss curves."""
+def fig3_transposition():
+    """ROC transposition under covariance swap (Theorem 3) and the two loss curves."""
     c = pd.read_csv(RES / "bivariate_curves.csv")
     fig, axes = plt.subplots(1, 3, figsize=(W2, 2.35), constrained_layout=True)
     for ax, (r0, r1) in zip(axes[:2], [("N", "P"), ("P", "N")]):
@@ -91,7 +91,7 @@ def fig2_transposition():
     save(fig, "Fig3.pdf")
 
 
-def fig3_curves():
+def fig2_curves():
     """Loss curves for symmetric (homoscedastic) and asymmetric scenarios, with closed forms."""
     c = pd.read_csv(RES / "bivariate_curves.csv")
     fig, axes = plt.subplots(1, 2, figsize=(W2, 2.4), constrained_layout=True, sharey=False)
@@ -105,7 +105,7 @@ def fig3_curves():
         grid = np.geomspace(1e-4, 0.5, 13)
         ax.plot(grid, pc.homoscedastic_pl(mu0, mu1, S, grid), ls="none", marker="o", ms=3.2,
                 mfc="white", mec=col, mew=1.0)
-    ax.plot([], [], ls="none", marker="o", ms=3.2, mfc="white", mec=INK2, label="closed form (Prop. 3)")
+    ax.plot([], [], ls="none", marker="o", ms=3.2, mfc="white", mec=INK2, label="closed form (Prop. 2)")
     ax.set_xscale("log")
     ax.set_xlabel(r"$\alpha$")
     ax.set_ylabel(r"$\mathrm{PL}(\alpha)$")
@@ -189,7 +189,7 @@ def fig6_bssr1():
 
 
 if __name__ == "__main__":
-    for f in (fig1_heatmaps, fig2_transposition, fig3_curves, fig4_mc, fig5_highdim, fig6_bssr1):
+    for f in (fig1_heatmaps, fig2_curves, fig3_transposition, fig4_mc, fig5_highdim, fig6_bssr1):
         try:
             f()
         except FileNotFoundError as e:

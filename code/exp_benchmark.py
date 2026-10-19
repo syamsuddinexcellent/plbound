@@ -6,9 +6,11 @@ Part A  CDF level (reference: the inversion at eps=1e-12, or for the three bivar
         (Kuonen 1999) and crude Monte Carlo, on generalized chi-square laws arising in the studies.
 Part B  PL level: error-bounded PL(alpha) versus the Monte Carlo plug-in estimator, as a function of
         the attainable precision.
+Part C  PL level: Davies's algorithm combined with the propagation of Proposition 6
+        (benchmark_pl_davies.R), and the error-bounded PL at strict operating points.
 
 Run this script alone (timings are wall-clock on one core).
-Outputs: ../results/bench_cdf.csv, ../results/bench_pl.csv
+Outputs: ../results/bench_cdf.csv, ../results/bench_pl.csv, ../results/bench_pl_davies.csv
 """
 import subprocess
 import time
@@ -90,10 +92,7 @@ def part_a():
 
 def part_b():
     rows = []
-    models = {"biv (N,P)": bivariate(0.0, 0.99), "biv (L,H)": bivariate(0.25, 0.75),
-              "random p=10": ds.random_model(10, np.random.default_rng(10001))[0],
-              "random p=50": ds.random_model(50, np.random.default_rng(50001))[0]}
-    for name, m in models.items():
+    for name, m in pl_models().items():
         for eps in (1e-6, 1e-8, 1e-10):
             o, sec = timed(lambda: pc.performance_loss(m, 0.05, eps=eps, with_auc=False))
             rows.append(dict(model=name, method="error-bounded", setting=f"eps={eps:g}", PL=o["PL"].mid,
@@ -112,6 +111,70 @@ def part_b():
     df = pd.DataFrame(rows)
     df.to_csv(OUT / "bench_pl.csv", index=False)
     print(df.to_string(), flush=True)
+
+
+def pl_models():
+    return {"biv (N,P)": bivariate(0.0, 0.99), "biv (L,H)": bivariate(0.25, 0.75),
+            "random p=10": ds.random_model(10, np.random.default_rng(10001))[0],
+            "random p=50": ds.random_model(50, np.random.default_rng(50001))[0]}
+
+
+def law_rows(name, a, dist):
+    out = []
+    for (rule, cls), g in dist.items():
+        out.append(dict(model=name, alpha=a, rule=rule, cls=cls,
+                        lam=";".join(f"{v:.17g}" for v in g.lam),
+                        delta=";".join(f"{v:.17g}" for v in (g.eta / (2 * g.lam)) ** 2),
+                        sigma=g.sigma0, kappa0=g.kappa0, kappa=g.kappa if g.r else g.kappa0,
+                        mean=g.kappa0 + float(np.sum(g.lam)),
+                        sd=float(np.sqrt(g.sigma0 ** 2 + np.sum(2 * g.lam ** 2 + g.eta ** 2)))))
+    return out
+
+
+def part_c(alphas=(0.05, 1e-4, 1e-6)):
+    """PL(alpha) by Davies's algorithm combined with Proposition 6 (benchmark_pl_davies.R), and
+    the error-bounded PL at strict operating points."""
+    rows, laws = [], []
+    for name, m in pl_models().items():
+        dist = pc.score_distributions(m)
+        for a in alphas:
+            laws += law_rows(name, a, dist)
+            if a != 0.05:
+                o, sec = timed(lambda: pc.performance_loss(m, a, eps=1e-10, with_auc=False))
+                rows.append(dict(model=name, alpha=a, method="error-bounded", setting="eps=1e-10",
+                                 PL=o["PL"].mid, precision=o["PL"].half_width, seconds=sec))
+                print(rows[-1], flush=True)
+    pd.DataFrame(laws).to_csv(OUT / "bench_pl_laws_for_R.csv", index=False)
+    subprocess.run(["Rscript", str(HERE / "benchmark_pl_davies.R"), str(OUT / "bench_pl_laws_for_R.csv"),
+                    str(OUT / "bench_pl_davies_R.csv")], check=True)
+    r = pd.read_csv(OUT / "bench_pl_davies_R.csv")
+    for _, x in r.iterrows():
+        rows.append(dict(model=x.model, alpha=x.alpha, method="Davies + Prop. 6", setting=f"acc={x.acc:g}",
+                         PL=0.5 * (x.PL_lo + x.PL_hi), precision=0.5 * (x.PL_hi - x.PL_lo),
+                         seconds=x.seconds, calls=x.calls, error=x.error))
+    df = pd.DataFrame(rows)
+    df.to_csv(OUT / "bench_pl_davies.csv", index=False)
+    print(df.to_string(), flush=True)
+    # whole loss curves: one FFT per law (pl_curve) versus per-point Davies + Proposition 6
+    grid = np.geomspace(1e-4, 0.5, 60)
+    crow, claws = [], []
+    for name, m in pl_models().items():
+        out, sec = timed(lambda: pc.pl_curve(m, grid, eps=1e-9))
+        crow.append(dict(model=name, method="error-bounded FFT grid", n_alpha=grid.size, seconds=sec,
+                         max_half_width=max(e.half_width for e in out["PL"])))
+        dist = pc.score_distributions(m)
+        for a in grid:
+            claws += law_rows(name, float(a), dist)
+    pd.DataFrame(claws).to_csv(OUT / "bench_curve_laws_for_R.csv", index=False)
+    subprocess.run(["Rscript", str(HERE / "benchmark_pl_davies.R"), str(OUT / "bench_curve_laws_for_R.csv"),
+                    str(OUT / "bench_curve_davies_R.csv"), "curve"], check=True)
+    r = pd.read_csv(OUT / "bench_curve_davies_R.csv")
+    for _, x in r.iterrows():
+        crow.append(dict(model=x.model, method="Davies + Prop. 6, acc=1e-6", n_alpha=x.n_alpha,
+                         seconds=x.seconds, max_half_width=x.max_half_width))
+    cdf = pd.DataFrame(crow)
+    cdf.to_csv(OUT / "bench_curve.csv", index=False)
+    print(cdf.to_string(), flush=True)
 
 
 def refresh_bivariate_reference():
@@ -143,7 +206,10 @@ if __name__ == "__main__":
     import sys
     if "--refresh-reference" in sys.argv:
         refresh_bivariate_reference()
+    elif "--part-c" in sys.argv:
+        part_c()
     else:
         part_a()
         refresh_bivariate_reference()
         part_b()
+        part_c()

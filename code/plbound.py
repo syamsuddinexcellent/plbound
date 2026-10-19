@@ -1,8 +1,9 @@
 """plbound: error-bounded evaluation of the fixed-FPR performance loss of the independence
 assumption in Gaussian likelihood-ratio classification.
 
-Companion code for Wisnubroto, Sumardi and Susyanto, "Error-bounded computation of the
-fixed-false-positive-rate cost of the independence assumption in Gaussian classification".
+Companion code for Wisnubroto, Sumardi and Susyanto, "Computing the fixed-false-positive-rate
+loss from assuming independence in Gaussian classification with guaranteed error bounds"
+(Computational Statistics, submitted).
 
 Main objects
 ------------

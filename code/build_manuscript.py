@@ -116,8 +116,19 @@ def table_bench_cdf():
             "\\midrule\n" + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
+def _secs(v):
+    """Seconds with two significant digits below 0.1 s (Davies's algorithm takes milliseconds)."""
+    return f"{v:.2f}" if v >= 0.1 else f"{v:.2g}"
+
+
+def _pow10(v):
+    return f"10^{{{int(round(np.log10(v)))}}}"
+
+
 def table_bench_pl():
     b = pd.read_csv(RES / "bench_pl.csv")
+    dv = pd.read_csv(RES / "bench_pl_davies.csv")
+    dv = dv[(dv.method == "Davies + Prop. 6") & (dv.alpha == 0.05)]
     rows = []
     for model, d in b.groupby("model", sort=False):
         for _, r in d.iterrows():
@@ -125,6 +136,11 @@ def table_bench_pl():
                 eps = sci(float(r.setting.split("=")[1]), 0).replace("1\\times", "")
                 rows.append(f"{model} & error-bounded, $\\varepsilon={eps}$ & {r.PL:.6f} & ${sci(r.precision)}$ & "
                             f"{r.seconds:.2f} & --- & --- \\\\")
+                if r.setting == "eps=1e-10":
+                    for _, x in dv[dv.model == model].iterrows():
+                        acc = _pow10(float(x.setting.split("=")[1]))
+                        rows.append(f"{model} & Davies + Prop.~6, acc $={acc}$ & {x.PL:.6f} & ${sci(x.precision)}$ & "
+                                    f"{_secs(x.seconds)} & --- & --- \\\\")
             else:
                 n = int(float(r.setting.split("=")[1]))
                 mins = r["seconds_for_1e-4"] / 60
@@ -132,14 +148,45 @@ def table_bench_pl():
                 rows.append(f"{model} & Monte Carlo, $N=10^{{{int(np.log10(n))}}}$ & {r.PL:.6f} & "
                             f"${sci(r.precision)}$ & {r.seconds:.3f} & {mins:.0f} & {days:,.0f} \\\\")
         rows.append("\\midrule")
-    return ("\\begin{table}[t]\n\\caption{Computing $\\PL(0.05)$: error-bounded enclosures versus the Monte Carlo "
-            "plug-in estimator. Precision is the half-width of the enclosure (error-bounded) or of a 95\\% interval "
+    return ("\\begin{table}[t]\n\\caption{Computing $\\PL(0.05)$: error-bounded enclosures, Davies's algorithm combined "
+            "with Proposition~\\ref{prop:prop}, and the Monte Carlo "
+            "plug-in estimator. Precision is the half-width of the enclosure or of a 95\\% interval "
             "from one replicate (Monte Carlo); time is per evaluation or per replicate in seconds. The last two "
             "columns give the CPU time Monte Carlo would need for a 95\\% half-width of $10^{-4}$ (minutes) "
             "and $10^{-6}$ (days), ignoring its $O(N^{-1})$ bias}"
-            "\\label{tab:benchpl}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+            "\\label{tab:benchpl}\n\\footnotesize\\setlength{\\tabcolsep}{2pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}llccccc@{}}\n\\toprule\n"
             "model & method & $\\PL(0.05)$ & precision & time (s) & $10^{-4}$ (min) & $10^{-6}$ (days)\\\\\n\\midrule\n"
+            + "\n".join(rows[:-1]) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
+def table_bench_strict():
+    d = pd.read_csv(RES / "bench_pl_davies.csv")
+    eb = d[d.method == "error-bounded"].set_index(["model", "alpha"])
+    dv = d[(d.method == "Davies + Prop. 6")].copy()
+    dv["acc"] = dv.setting.str.split("=").str[1].astype(float)
+    rows = []
+    for model in dict.fromkeys(d.model):
+        for a in (1e-4, 1e-6):
+            e = eb.loc[(model, a)]
+            cells = [f"{model}", f"${_pow10(a)}$", f"{e.PL:.6f}", f"${sci(e.precision)}$", f"{e.seconds:.2f}"]
+            for acc in (1e-6, 1e-10):
+                x = dv[(dv.model == model) & (dv.alpha == a) & (dv.acc == acc)]
+                if len(x) and np.isfinite(x.precision.iloc[0]):
+                    cells += [f"${sci(x.precision.iloc[0])}$", _secs(x.seconds.iloc[0])]
+                else:
+                    cells += ["failed", "---"]
+            rows.append(" & ".join(cells) + " \\\\")
+        rows.append("\\midrule")
+    return ("\\begin{table}[t]\n\\caption{Strict operating points: error-bounded $\\PL(\\alpha)$ at $\\varepsilon=10^{-10}$ "
+            "and Davies's algorithm combined with Proposition~\\ref{prop:prop} at accuracy acc. Half-widths of the "
+            "enclosures and times in seconds}"
+            "\\label{tab:strict}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+            "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}llccccccc@{}}\n\\toprule\n"
+            " & & \\multicolumn{3}{c}{error-bounded, $\\varepsilon=10^{-10}$} & \\multicolumn{2}{c}{Davies, acc $=10^{-6}$} "
+            "& \\multicolumn{2}{c}{Davies, acc $=10^{-10}$}\\\\\n"
+            "\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}\\cmidrule(lr){8-9}\n"
+            "model & $\\alpha$ & $\\PL(\\alpha)$ & half-width & time & half-width & time & half-width & time\\\\\n\\midrule\n"
             + "\n".join(rows[:-1]) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
@@ -216,6 +263,23 @@ TABLE_ID = [
     ("model & method & $\\PL(0.05)$ & precision & time (s) & $10^{-4}$ (min) & $10^{-6}$ (days)",
      "model & metode & $\\PL(0.05)$ & presisi & waktu (s) & $10^{-4}$ (menit) & $10^{-6}$ (hari)"),
     ("& error-bounded,", "& berbatas galat,"), ("random p=", "acak p="),
+    ("Computing $\\PL(0.05)$: error-bounded enclosures, Davies's algorithm combined with Proposition~\\ref{prop:prop}, "
+     "and the Monte Carlo plug-in estimator. Precision is the half-width of the enclosure or of a 95\\% interval from one "
+     "replicate (Monte Carlo); time is per evaluation or per replicate in seconds. The last two columns give the CPU time "
+     "Monte Carlo would need for a 95\\% half-width of $10^{-4}$ (minutes) and $10^{-6}$ (days), ignoring its $O(N^{-1})$ bias",
+     "Menghitung $\\PL(0.05)$: selang penutup berbatas galat, algoritma Davies yang digabung dengan Proposisi~\\ref{prop:prop}, "
+     "dan penduga plug-in Monte Carlo. Presisi adalah setengah lebar selang penutup atau selang 95\\% dari satu ulangan "
+     "(Monte Carlo); waktu per evaluasi atau per ulangan dalam detik. Dua kolom terakhir memberikan waktu CPU yang diperlukan "
+     "Monte Carlo untuk setengah lebar 95\\% sebesar $10^{-4}$ (menit) dan $10^{-6}$ (hari), tanpa memperhitungkan bias "
+     "$O(N^{-1})$-nya"),
+    ("Strict operating points: error-bounded $\\PL(\\alpha)$ at $\\varepsilon=10^{-10}$ and Davies's algorithm combined "
+     "with Proposition~\\ref{prop:prop} at accuracy acc. Half-widths of the enclosures and times in seconds",
+     "Titik operasi ketat: $\\PL(\\alpha)$ berbatas galat pada $\\varepsilon=10^{-10}$ dan algoritma Davies yang digabung "
+     "dengan Proposisi~\\ref{prop:prop} pada akurasi acc. Setengah lebar selang penutup dan waktu dalam detik"),
+    ("\\multicolumn{3}{c}{error-bounded, $\\varepsilon=10^{-10}$}", "\\multicolumn{3}{c}{berbatas galat, $\\varepsilon=10^{-10}$}"),
+    ("model & $\\alpha$ & $\\PL(\\alpha)$ & half-width & time & half-width & time & half-width & time",
+     "model & $\\alpha$ & $\\PL(\\alpha)$ & setengah lebar & waktu & setengah lebar & waktu & setengah lebar & waktu"),
+    (" & failed & ", " & gagal & "),
     ("BSSR1 fusion; losses in percentage points. Correlations are those of the transformed genuine/impostor scores "
      "(largest absolute value for four matchers). Model: error-bounded $\\PL(\\alpha)$ of the Gaussian model fitted to all "
      "subjects (half-widths below $10^{-8}$). Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, "
@@ -269,7 +333,7 @@ def main(lang="en"):
     suffix = "" if lang == "en" else f"_{lang}"
     src = (MAN / f"manuscript{suffix}_src.tex").read_text()
     gens = {"TABLE_BIV": table_biv, "TABLE_AR1": table_ar1, "TABLE_BENCH_CDF": table_bench_cdf,
-            "TABLE_BENCH_PL": table_bench_pl, "TABLE_BSSR1": table_bssr1}
+            "TABLE_BENCH_PL": table_bench_pl, "TABLE_BENCH_STRICT": table_bench_strict, "TABLE_BSSR1": table_bssr1}
     blocks = MAN / ("blocks" if lang == "en" else f"blocks_{lang}")
     for _ in range(2):                          # blocks may contain table markers
         for name in list(gens) + [p.stem for p in blocks.glob("*.tex")] if blocks.exists() else gens:

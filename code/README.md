@@ -49,7 +49,7 @@ python test_plbound.py             # exactness tests against known distributions
 python indep_bivariate.py          # independent check of Table 1 (no characteristic functions)
 python exp_bivariate.py            # Section 5, Table 1, Figures 1-4   (~10 min)
 python exp_highdim.py              # Section 7, Table 4, Figure 5      (~15 min, 6 processes)
-python exp_benchmark.py            # Section 6, Tables 2 and 3 (run alone; timings)
+python exp_benchmark.py            # Section 6, Tables 2 and 3 (run alone; timings; needs R)
 python exp_bssr1.py                # Section 8, Table 5, Figure 6      (~1 h, needs 8 GB RAM)
 python make_figures.py
 python build_manuscript.py         # inserts the tables into ../manuscript/manuscript.tex (manuscript sources are not part of the repository)
@@ -74,5 +74,6 @@ python prepare_bssr1.py --large <dir>/bssr1 ../data/bssr1_set2_face.npz ../data/
 | `designs.py` | covariance designs of Section 7 |
 | `exp_*.py` | experiments; results are written to `../results` |
 | `benchmark_cdf.R` | Davies and Imhof evaluations via CompQuadForm |
+| `benchmark_pl_davies.R` | PL from Davies's algorithm combined with Proposition 6 (Section 6) |
 | `prepare_bssr1.py` | conversion of the NIST score files |
 | `make_figures.py`, `build_manuscript.py` | figures and tables of the paper |
