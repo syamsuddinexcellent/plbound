@@ -6,6 +6,7 @@ Repository: <https://github.com/syamsuddinexcellent/plbound>.
 Authors: M. Syamsuddin Wisnubroto, Sumardi, Nanang Susyanto.
 Corresponding author: Sumardi, Department of Mathematics, Universitas Gadjah Mada, Yogyakarta,
 Indonesia (mardimath@ugm.ac.id).
+Questions about the code: M. Syamsuddin Wisnubroto (msyamsuddinwisnubroto@mail.ugm.ac.id).
 
 `plbound.py` computes guaranteed enclosures of
 
