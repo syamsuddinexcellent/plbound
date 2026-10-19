@@ -1,5 +1,7 @@
 # plbound
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23472531.svg)](https://doi.org/10.5281/zenodo.23472531)
+
 Code and numerical results for
 
 > M. Syamsuddin Wisnubroto, Sumardi and Nanang Susyanto, *Computing the fixed-false-positive-rate loss
@@ -40,3 +42,15 @@ print(pc.performance_loss(model, alpha=0.05, eps=1e-10)["PL"])   # 0.2924439279 
 
 Requirements: Python 3.9 or later with numpy, scipy, pandas and matplotlib; R with CompQuadForm for
 the benchmark. Released under the MIT licence.
+
+## How to cite
+
+Please cite the paper and, for the code, the archived release:
+
+> Wisnubroto MS, Sumardi, Susyanto N (2026) plbound: the fixed-false-positive-rate loss of the independence
+> assumption in Gaussian classification, computed with guaranteed error bounds. Version 1.0.0. Zenodo.
+> https://doi.org/10.5281/zenodo.23472531
+
+The DOI 10.5281/zenodo.23472531 identifies version 1.0.0, the version submitted with the paper;
+10.5281/zenodo.23472530 always resolves to the latest version. GitHub's "Cite this repository" button
+uses [`CITATION.cff`](CITATION.cff).
