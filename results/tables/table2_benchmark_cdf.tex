@@ -1,0 +1,21 @@
+\begin{table}[t]
+\caption{Distribution-function benchmark over 35 evaluation points (seven generalized chi-square laws at five quantile levels from $10^{-4}$ to $1-10^{-4}$). Errors are absolute errors with respect to the reference values described in Section~\ref{sec:bench}; for Davies's method, failures are calls returning a non-zero fault indicator and are excluded from the error. Times in milliseconds; acc is the accuracy requested from Davies's method and lim its maximal number of integration terms (default $10^4$, otherwise $10^8$)}\label{tab:benchcdf}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep\fill}llccccc@{}}
+\toprule
+method & setting & max.\ error & within bound & failures & median (ms) & max.\ (ms)\\
+\midrule
+error-bounded & $\varepsilon=10^{-6}$ & $1.4\times10^{-7}$ & 35/35 & 0 & 38.7 & 189\\
+error-bounded & $\varepsilon=10^{-8}$ & $1.4\times10^{-9}$ & 35/35 & 0 & 47.5 & 722\\
+error-bounded & $\varepsilon=10^{-10}$ & $1.1\times10^{-10}$ & 35/35 & 0 & 69.2 & 2757\\
+Davies & acc $=10^{-6}$ & $6.8\times10^{-8}$ & --- & 0 & 0.08 & 4.3\\
+Davies & acc $=10^{-8}$ & $7.2\times10^{-10}$ & --- & 0 & 0.86 & 70.3\\
+Davies & acc $=10^{-10}$ & $6.5\times10^{-12}$ & --- & 0 & 11.4 & 966\\
+Davies & acc $10^{-10}$, lim $10^4$ & $5.6\times10^{-13}$ & --- & 20 & 0.04 & 0.07\\
+Imhof & $\varepsilon=10^{-6}$ & $5.5\times10^{-6}$ & --- & 0 & 0.88 & 108\\
+Imhof & $\varepsilon=10^{-10}$ & $5.5\times10^{-6}$ & --- & 0 & 44.6 & 149\\
+saddlepoint & Lugannani--Rice & $3.4\times10^{-2}$ & --- & 0 & 0.63 & 4.2\\
+Monte Carlo & $n=10^6$ & $6.9\times10^{-4}$ & --- & 0 & 54.1 & 1025\\
+\botrule
+\end{tabular*}
+\end{table}

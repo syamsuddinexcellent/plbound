@@ -13,9 +13,14 @@ chi-square distribution functions involved are evaluated by midpoint-rule invers
 function with explicit bounds on aliasing, truncation and rounding error, and the bounds are propagated
 through the quantile that defines the threshold.
 
+Everything is in one file, [`code/plbound.py`](code/plbound.py): the module, and the script that
+reproduces every number, table and figure of the paper in one run.
+
 ```bash
 git clone https://github.com/syamsuddinexcellent/plbound.git
-cd plbound/code && pip install -r requirements.txt && python test_plbound.py
+cd plbound/code && pip install -r requirements.txt
+python plbound.py                              # tests and Sections 5-8, about 25 minutes
+python plbound.py --bssr1 path/to/bssr1.zip    # first run only: converts the NIST scores for Section 8
 ```
 
 ```python
@@ -29,8 +34,8 @@ print(pc.performance_loss(model, alpha=0.05, eps=1e-10)["PL"])   # 0.2924439279 
 
 | folder | content |
 |---|---|
-| [`code/`](code) | the module `plbound.py`, tests, experiments and figure scripts; see [`code/README.md`](code/README.md) |
-| [`results/`](results) | every number reported in the paper, as CSV files written by the experiment scripts |
+| [`code/`](code) | `plbound.py` (module and reproduction script) and its documentation, [`code/README.md`](code/README.md) |
+| [`results/`](results) | every number reported in the paper as CSV files, with the figures (`results/figures`) and LaTeX tables (`results/tables`) |
 | [`data/`](data) | instructions for obtaining the NIST BSSR1 scores used in Section 8 |
 
 Requirements: Python 3.9 or later with numpy, scipy, pandas and matplotlib; R with CompQuadForm for
