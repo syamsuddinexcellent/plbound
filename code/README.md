@@ -2,6 +2,7 @@
 
 Online Resource 1 for *Computing the fixed-false-positive-rate loss from assuming independence in
 Gaussian classification with guaranteed error bounds*, Computational Statistics.
+Repository: <https://github.com/syamsuddinexcellent/plbound>.
 Authors: M. Syamsuddin Wisnubroto, Sumardi, Nanang Susyanto.
 Corresponding author: Sumardi, Department of Mathematics, Universitas Gadjah Mada, Yogyakarta,
 Indonesia (mardimath@ugm.ac.id).

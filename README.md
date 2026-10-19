@@ -13,6 +13,11 @@ chi-square distribution functions involved are evaluated by midpoint-rule invers
 function with explicit bounds on aliasing, truncation and rounding error, and the bounds are propagated
 through the quantile that defines the threshold.
 
+```bash
+git clone https://github.com/syamsuddinexcellent/plbound.git
+cd plbound/code && pip install -r requirements.txt && python test_plbound.py
+```
+
 ```python
 import numpy as np
 import plbound as pc            # run from the code/ folder
