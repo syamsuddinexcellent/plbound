@@ -4,6 +4,7 @@
 !/.gitignore
 !/README.md
 !/LICENSE
+!/CITATION.cff
 !/code/
 !/results/
 !/data/

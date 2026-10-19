@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "plbound: the fixed-false-positive-rate loss of the independence assumption in Gaussian classification, computed with guaranteed error bounds"
+abstract: >-
+  plbound computes guaranteed enclosures of PL(alpha) = TPR_full(alpha) - TPR_independence(alpha),
+  the loss in true positive rate at a fixed false positive rate alpha incurred when a Gaussian
+  likelihood-ratio classifier replaces the class covariance matrices by their diagonals. The
+  generalized chi-square distribution functions involved are evaluated by midpoint-rule inversion
+  of the characteristic function with explicit bounds on aliasing and truncation error and an
+  allowance for rounding error, and the bounds are propagated through the quantile that defines the
+  threshold. The single file plbound.py is both the Python module and the script that reproduces
+  every number, table and figure of the accompanying paper in one run (python plbound.py).
+authors:
+  - given-names: "M. Syamsuddin"
+    family-names: "Wisnubroto"
+    affiliation: "Universitas Gadjah Mada; Institut Teknologi Sumatera"
+  - family-names: "Sumardi"
+    affiliation: "Universitas Gadjah Mada"
+  - given-names: "Nanang"
+    family-names: "Susyanto"
+    affiliation: "Universitas Gadjah Mada"
+repository-code: "https://github.com/syamsuddinexcellent/plbound"
+license: MIT
+version: "1.0.0"
+date-released: "2026-10-19"
+keywords:
+  - naive Bayes
+  - generalized chi-square distribution
+  - characteristic function inversion
+  - Neyman-Pearson classification
+  - receiver operating characteristic
+  - biometric score fusion
+  - error bounds
