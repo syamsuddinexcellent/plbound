@@ -1,42 +1,45 @@
 """plbound: the fixed-false-positive-rate loss of the independence assumption in Gaussian
-classification, computed with guaranteed error bounds.
+classification, computed with guaranteed error bounds and estimated from data.
 
-Companion code for M. Syamsuddin Wisnubroto, Sumardi and Nanang Susyanto, "Computing the
-fixed-false-positive-rate loss from assuming independence in Gaussian classification with
-guaranteed error bounds" (Computational Statistics, submitted).
+Companion code for a manuscript by M. Syamsuddin Wisnubroto, Sumardi and Nanang Susyanto (under
+review); the reference will be added on publication. Version 1.0.0, without the inference of
+Section 6, is archived at https://doi.org/10.5281/zenodo.23472531.
 Repository: https://github.com/syamsuddinexcellent/plbound (MIT licence)
 
 This single file is both
 
 * the Python module (``import plbound as pc``): generalized chi-square laws, error-bounded
   inversion of their distribution functions (Theorem 5), propagation of the bounds through the
-  quantile (Proposition 6), and enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha); and
+  quantile (Proposition 6), enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha), and the
+  delta-method and bootstrap inference of Section 6; and
 * the script that reproduces every number, table and figure of the paper in one run:
 
       python plbound.py
 
-  It runs the exactness tests and Sections 5 to 8 and writes the CSV files to ../results, the
-  figures to ../results/figures (Fig1.pdf ... Fig6.pdf) and the LaTeX tables to
-  ../results/tables. The full run takes about 25 minutes on a laptop (Apple M1, six worker
-  processes); Section 8 needs about 8 GB of memory.
+  It runs the exactness tests, the studies of Section 5, the simulation study of Section 6 and
+  the application of Section 7, and writes the CSV files to ../results, the figures to
+  ../results/figures and the LaTeX tables to ../results/tables. The full run takes about three and
+  a half hours on a laptop (Apple M1, seven worker processes), most of it for the simulation study of
+  Section 6, which can be interrupted and resumed; Section 7 needs about 8 GB of memory.
 
 Requirements: Python >= 3.9 with numpy, scipy, pandas and matplotlib. The benchmark of
-Section 6 also calls R (Rscript) with the package CompQuadForm, and Section 8 needs the NIST
+Section 5.3 also calls R (Rscript) with the package CompQuadForm, and Section 7 needs the NIST
 BSSR1 scores: pass the downloaded bssr1.zip once with --bssr1 (see data/README.md). Steps whose
 requirements are missing are skipped with a message.
 
 Options
-  --only STEPS   comma-separated subset of: tests, bivariate, highdim, benchmark, bssr1,
-                 figures, tables (default: all, in this order)
+  --only STEPS   comma-separated subset of: tests, bivariate, highdim, benchmark, inference,
+                 bssr1, figures, tables (default: all, in this order)
   --out DIR      folder for the results (default: ../results)
   --data DIR     folder for the prepared BSSR1 files (default: ../data)
   --bssr1 PATH   bssr1.zip from NIST, or the folder it was extracted to; converted into --data
-  --workers N    worker processes for Section 7 (default: 6)
+  --workers N    worker processes for the parallel studies (default: 6)
 """
 from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -53,7 +56,7 @@ from scipy import integrate, optimize, special, stats
 
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "results"            # CSV files; figures and tables go to OUT/figures and OUT/tables
-DATA = REPO / "data"              # prepared NIST BSSR1 score matrices (Section 8)
+DATA = REPO / "data"              # prepared NIST BSSR1 score matrices (Section 7)
 
 
 # =============================================================================================
@@ -566,6 +569,15 @@ def error_bounded_quantile(g: GenChi2, p, eps=1e-10, evaluator=None, max_terms=2
     dens = max((evaluator(t_star + eta)[0] - evaluator(t_star - eta)[0]) / (2 * eta), 1e-300)
     e_star = evaluator(t_star)[1]
     d = max(2.0 * e_star / dens, 1e-14 * (1 + abs(t_star)))
+    if d > 0.1 * g.sd:
+        # At a coarse eps the difference quotient above can be swamped by the error bounds; the
+        # bracket is verified below in any case, so d only needs to be a reasonable first guess.
+        d = 1e-3 * g.sd
+        for eta in g.sd * np.array([1e-4, 1e-3, 1e-2, 1e-1]):
+            (F1, e1), (F2, e2) = evaluator(t_star + eta), evaluator(t_star - eta)
+            if F1 - F2 > 4 * (e1 + e2):
+                d = min(max(2.0 * e_star * 2 * eta / (F1 - F2), 1e-14 * (1 + abs(t_star))), 0.1 * g.sd)
+                break
     for _ in range(80):
         Flo, elo = evaluator(t_star - d)
         Fhi, ehi = evaluator(t_star + d)
@@ -727,10 +739,143 @@ def pl_curve(model: GaussianModel, alphas, eps=1e-9, max_terms=2 ** 24, min_poin
     return out
 
 
+# ---------------------------------------------------------------------------------------------
+# Estimating PL(alpha) from data: delta method and parametric bootstrap
+# ---------------------------------------------------------------------------------------------
+def fit_gaussian(X0, X1):
+    """Gaussian class models fitted by sample means and unbiased sample covariance matrices."""
+    X0, X1 = np.atleast_2d(np.asarray(X0, float)), np.atleast_2d(np.asarray(X1, float))
+    return GaussianModel(X0.mean(0), X1.mean(0), np.atleast_2d(np.cov(X0.T)), np.atleast_2d(np.cov(X1.T)))
+
+
+def model_parameters(model: GaussianModel):
+    """theta = (mu0, mu1, vech S0, vech S1), vech taken over the lower triangle."""
+    i, j = np.tril_indices(model.p)
+    return np.concatenate([model.mu0, model.mu1, model.S0[i, j], model.S1[i, j]])
+
+
+def model_from_parameters(theta, p):
+    """Inverse of model_parameters."""
+    i, j = np.tril_indices(p)
+    q = i.size
+    S = []
+    for k in range(2):
+        M = np.zeros((p, p))
+        M[i, j] = M[j, i] = theta[2 * p + k * q: 2 * p + (k + 1) * q]
+        S.append(M)
+    return GaussianModel(theta[:p], theta[p:2 * p], S[0], S[1])
+
+
+def parameter_covariance(model: GaussianModel, n0, n1):
+    """Asymptotic covariance matrix of the estimated theta from n0 and n1 independent observations:
+    Sigma_y / n_y for the means and 2 D+ (Sigma_y x Sigma_y) D+' / n_y for vech Sigma_y."""
+    p = model.p
+    i, j = np.tril_indices(p)
+    D = np.zeros((p * p, i.size))
+    for k, (a, b) in enumerate(zip(i, j)):
+        D[a * p + b, k] = D[b * p + a, k] = 1.0
+    Dp = np.linalg.pinv(D)
+    blocks = [model.S0 / n0, model.S1 / n1, 2.0 / n0 * Dp @ np.kron(model.S0, model.S0) @ Dp.T,
+              2.0 / n1 * Dp @ np.kron(model.S1, model.S1) @ Dp.T]
+    size = sum(bl.shape[0] for bl in blocks)
+    V, k = np.zeros((size, size)), 0
+    for bl in blocks:
+        V[k:k + bl.shape[0], k:k + bl.shape[0]] = bl
+        k += bl.shape[0]
+    return V
+
+
+def pl_gradient(model: GaussianModel, alpha, eps=1e-8, rel_step=2e-3):
+    """Central-difference gradient of PL(alpha) with respect to theta. Because every PL value is an
+    enclosure, the rounding and inversion error of each difference quotient is bounded by
+    (half-width up + half-width down) / (2 h); the O(h^2) truncation error is not included.
+    Steps for covariance entries are scaled by the smallest eigenvalue of the class covariance, which
+    keeps the perturbed matrices positive definite and the steps small when they are near-singular."""
+    theta, p = model_parameters(model), model.p
+    i, j = np.tril_indices(p)
+    sd0, sd1 = np.sqrt(np.diag(model.S0)), np.sqrt(np.diag(model.S1))
+    l0, l1 = np.linalg.eigvalsh(model.S0)[0], np.linalg.eigvalsh(model.S1)[0]
+    h = rel_step * np.concatenate([sd0, sd1, np.minimum(sd0[i] * sd0[j], l0), np.minimum(sd1[i] * sd1[j], l1)])
+    grad, err = np.empty(theta.size), np.empty(theta.size)
+    for k in range(theta.size):
+        step = np.zeros_like(theta)
+        step[k] = h[k]
+        up = performance_loss(model_from_parameters(theta + step, p), alpha, eps, with_auc=False)["PL"]
+        dn = performance_loss(model_from_parameters(theta - step, p), alpha, eps, with_auc=False)["PL"]
+        grad[k] = (up.mid - dn.mid) / (2 * h[k])
+        err[k] = (up.half_width + dn.half_width) / (2 * h[k])
+    return grad, err
+
+
+def pl_hessian(model: GaussianModel, alpha, eps=1e-10, rel_step=0.05):
+    """Hessian of PL(alpha) with respect to theta by central second differences (2q^2 evaluations),
+    with steps scaled as in pl_gradient. Used at a zero of the loss, where it gives the 1/n bias
+    tr(H V)/2 of the plug-in estimate (Proposition 7(b))."""
+    theta, p = model_parameters(model), model.p
+    i, j = np.tril_indices(p)
+    sd0, sd1 = np.sqrt(np.diag(model.S0)), np.sqrt(np.diag(model.S1))
+    l0, l1 = np.linalg.eigvalsh(model.S0)[0], np.linalg.eigvalsh(model.S1)[0]
+    h = rel_step * np.concatenate([sd0, sd1, np.minimum(sd0[i] * sd0[j], l0), np.minimum(sd1[i] * sd1[j], l1)])
+    q = theta.size
+    f = lambda x: performance_loss(model_from_parameters(theta + x, p), alpha, eps, with_auc=False)["PL"].mid
+    E = np.diag(h)
+    f0 = f(np.zeros(q))
+    H = np.empty((q, q))
+    for a in range(q):
+        H[a, a] = (f(E[a]) - 2 * f0 + f(-E[a])) / h[a] ** 2
+        for b in range(a):
+            H[a, b] = H[b, a] = (f(E[a] + E[b]) - f(E[a] - E[b]) - f(-E[a] + E[b]) + f(-E[a] - E[b])) / (4 * h[a] * h[b])
+    return H
+
+
+def pl_delta_interval(model: GaussianModel, n0, n1, alpha, level=0.95, eps=1e-8, rel_step=2e-3,
+                      se_rtol=None, eps_min=1e-12):
+    """Plug-in estimate of PL(alpha) with a delta-method standard error and Wald interval.
+
+    se_err bounds the change in se caused by the numerical error of the gradient: se is the norm
+    |V^(1/2) g|, so by the triangle inequality the change is at most (e'|V| e)^(1/2), where e bounds
+    the componentwise error of the difference quotients (pl_gradient). With se_rtol, eps is divided
+    by 100 until se_err <= se_rtol * se or eps would fall below eps_min; the eps used is returned."""
+    V = parameter_covariance(model, n0, n1)
+    while True:
+        grad, err = pl_gradient(model, alpha, eps, rel_step)
+        se = float(np.sqrt(max(grad @ V @ grad, 0.0)))
+        se_err = float(np.sqrt(err @ np.abs(V) @ err))
+        if se_rtol is None or se_err <= se_rtol * se or eps / 100 < eps_min:
+            break
+        eps /= 100
+    est = performance_loss(model, alpha, eps, with_auc=False)["PL"]
+    z = float(special.ndtri(0.5 + level / 2))
+    return dict(PL=est.mid, PL_hw=est.half_width, se=se, lo=est.mid - z * se, hi=est.mid + z * se,
+                grad_err=float(np.max(err)), se_err=se_err, eps=eps)
+
+
+def pl_bootstrap(model: GaussianModel, n0, n1, alpha, B, rng, level=0.95, eps=1e-6, est=None):
+    """Parametric bootstrap of the plug-in estimator: B data sets of sizes n0, n1 are drawn from the
+    fitted model, the model is refitted and PL(alpha) recomputed. Returns the percentile and basic
+    (bias-reflecting) intervals, the bias-corrected estimate 2 PL_hat - mean(PL*) and the largest
+    half-width of the PL* enclosures. est is the plug-in estimate PL_hat if already computed."""
+    L0, L1 = np.linalg.cholesky(model.S0), np.linalg.cholesky(model.S1)
+    if est is None:
+        est = performance_loss(model, alpha, eps, with_auc=False)["PL"].mid
+    stars, hw = np.empty(B), np.empty(B)
+    for b in range(B):
+        X0 = model.mu0 + rng.standard_normal((n0, model.p)) @ L0.T
+        X1 = model.mu1 + rng.standard_normal((n1, model.p)) @ L1.T
+        enc = performance_loss(fit_gaussian(X0, X1), alpha, eps, with_auc=False)["PL"]
+        stars[b], hw[b] = enc.mid, enc.half_width
+    a = (1 - level) / 2
+    q_lo, q_hi = np.quantile(stars, [a, 1 - a])
+    bias = float(stars.mean() - est)
+    return dict(PL=est, bias=bias, PL_bc=est - bias, sd=float(stars.std(ddof=1)), lo_pct=float(q_lo),
+                hi_pct=float(q_hi), lo_basic=float(2 * est - q_hi), hi_basic=float(2 * est - q_lo), hw_max=float(hw.max()),
+                stars=stars)
+
+
 # =============================================================================================
-# Part 2. Covariance designs (Sections 5 and 7)
+# Part 2. Covariance designs (Sections 5 and 6)
 # =============================================================================================
-# The bivariate design of Section 5 (also the setting of the independent check in Part 3)
+# The bivariate design of Section 5.1 (also the setting of the independent check in Part 3)
 MU0, MU1 = np.array([1.0, 2.0]), np.array([2.0, 0.5])
 BIV_LEVELS = {"N": 0.0, "L": 0.25, "M": 0.50, "H": 0.75, "P": 0.99}
 BIV_LABELS = list(BIV_LEVELS)
@@ -915,7 +1060,7 @@ def run_tests():
 
 
 # =============================================================================================
-# Part 5. Study I: the bivariate design (Section 5)
+# Part 5. The bivariate design (Section 5.1)
 # =============================================================================================
 def bivariate_model(l0, l1):
     return GaussianModel(MU0, MU1, biv_cov(BIV_LEVELS[l0]), biv_cov(BIV_LEVELS[l1]))
@@ -998,7 +1143,7 @@ def bivariate_pl_curves():
 
 
 def run_bivariate():
-    """Section 5: Table 1, the shared-covariance check, loss curves, Monte Carlo, independent check."""
+    """Section 5.1: Table 1, the shared-covariance check, loss curves, Monte Carlo, independent check."""
     tab = bivariate_error_bounded_table()
     bivariate_homoscedastic_check(tab)
     bivariate_pl_curves()
@@ -1007,7 +1152,7 @@ def run_bivariate():
 
 
 # =============================================================================================
-# Part 6. Study II: beyond two dimensions (Section 7)
+# Part 6. Beyond two dimensions (Section 5.2)
 # =============================================================================================
 AR1_RHOS = (0.0, 0.3, 0.6, 0.9)
 
@@ -1063,7 +1208,7 @@ def _pool_run(pool, job, tasks, name):
 
 
 def highdim_mc_followup():
-    """The two most discrepant Monte Carlo checks of Section 7, repeated with new random numbers
+    """The two most discrepant Monte Carlo checks of Section 5.2, repeated with new random numbers
     and with both rules evaluated at their exact thresholds (results/highdim_mc_followup.csv)."""
     rows = []
     for p, seed in ((10, 10008), (20, 20009)):
@@ -1102,8 +1247,9 @@ def highdim_mc_followup():
 
 
 def run_highdim(workers=6):
-    """Section 7: AR(1) and random designs, Monte Carlo checks and run times."""
+    """Section 5.2: AR(1) and random designs, Monte Carlo checks and run times."""
     from multiprocessing import Pool
+    _single_threaded_workers()
     with Pool(workers) as pool:
         _pool_run(pool, structured_job,
                   [(p, r0, r1, vr) for p in (2, 5, 10, 20, 50) for r0, r1 in product(AR1_RHOS, AR1_RHOS)
@@ -1120,13 +1266,13 @@ def run_highdim(workers=6):
 
 
 # =============================================================================================
-# Part 7. Computational benchmark (Section 6)
+# Part 7. Computational benchmark (Section 5.3 and Online Resource 1)
 # =============================================================================================
 # The two R programs of the benchmark are kept here as text and written to a temporary folder
 # when the benchmark runs (they need R with the package CompQuadForm).
 R_SCRIPTS = {
 "benchmark_cdf.R": r"""# Davies (1980) and Imhof (1961) CDF evaluations via CompQuadForm, for the benchmark of
-# Section 6 (run by plbound.py).  Usage: Rscript benchmark_cdf.R cases.csv out.csv
+# Section 5.3 (run by plbound.py).  Usage: Rscript benchmark_cdf.R cases.csv out.csv
 #
 # CompQuadForm evaluates P(Q > q) for Q = sum_j lambda_j chi2_1(delta_j) + sigma Z, so the
 # constant kappa of the generalized chi-square law is absorbed in q = x - kappa.
@@ -1177,7 +1323,7 @@ for (i in seq_len(nrow(cases))) {
 write.csv(do.call(rbind, rows), args[2], row.names = FALSE)
 """,
 "benchmark_pl_davies.R": r"""# PL(alpha) from Davies's (1980) algorithm combined with the propagation of Proposition 6, for
-# the benchmark of Section 6 (run by plbound.py).  Usage: Rscript benchmark_pl_davies.R laws.csv out.csv [curve]
+# the benchmark of Section 5.3 (run by plbound.py).  Usage: Rscript benchmark_pl_davies.R laws.csv out.csv [curve]
 #
 # Each distribution function is evaluated by CompQuadForm::davies with error at most acc; the
 # threshold is bracketed as in Proposition 6(a) and the true positive rate enclosed as in 6(b).
@@ -1469,7 +1615,7 @@ def refresh_bivariate_reference():
 
 
 def run_benchmark():
-    """Section 6: distribution functions, the loss, Davies + Proposition 6, strict operating points."""
+    """Section 5.3: distribution functions, the loss, Davies + Proposition 6, strict operating points."""
     if shutil.which("Rscript") is None:
         print("Rscript not found: the benchmark needs R with the package CompQuadForm; skipped", flush=True)
         return
@@ -1480,7 +1626,125 @@ def run_benchmark():
 
 
 # =============================================================================================
-# Part 8. Application: NIST BSSR1 score fusion (Section 8)
+# Part 7b. Estimating the loss from data (Section 6): simulation study of the delta-method and bootstrap
+# intervals (aims: bias of the plug-in estimator and coverage of 95% intervals for PL(0.05);
+# data: the bivariate design with n observations per class; estimand: PL(0.05) of the true model;
+# methods: plug-in, bootstrap bias correction, delta-method, percentile and basic intervals;
+# performance: bias, RMSE, coverage with its Monte Carlo standard error, interval width)
+# =============================================================================================
+INF_DESIGNS = {"(N,P)": (0.0, 0.99), "(L,H)": (0.25, 0.75), "(N,N)": (0.0, 0.0)}
+INF_SIZES = (250, 2500)
+INF_REPS, INF_BOOT, INF_ALPHA = 200, 100, 0.05
+INF_SE_RTOL = 0.01      # eps of the delta method is refined until the bound on the error of se is below 1% of se
+INF_BOUNDARY_REPS = 4000  # plug-in estimates only, to check the predicted bias where the loss vanishes
+
+
+def inference_job(args):
+    name, n, rep = args
+    r0, r1 = INF_DESIGNS[name]
+    m = GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1))
+    rng = np.random.default_rng([list(INF_DESIGNS).index(name), n, rep])
+    L0, L1 = np.linalg.cholesky(m.S0), np.linalg.cholesky(m.S1)
+    fit = fit_gaussian(m.mu0 + rng.standard_normal((n, 2)) @ L0.T, m.mu1 + rng.standard_normal((n, 2)) @ L1.T)
+    t0 = time.perf_counter()
+    d = pl_delta_interval(fit, n, n, INF_ALPHA, se_rtol=INF_SE_RTOL)
+    # bootstrap values need only be accurate to well below their Monte Carlo spread, of the order se
+    eps_boot = min(1e-4, 1e-3 * max(d["se"], 1e-9))
+    b = pl_bootstrap(fit, n, n, INF_ALPHA, INF_BOOT, rng, eps=eps_boot, est=d["PL"])
+    return dict(design=name, n=n, rep=rep, PL_hat=d["PL"], se_delta=d["se"], lo_delta=d["lo"], hi_delta=d["hi"],
+                eps_delta=d["eps"], grad_err=d["grad_err"], se_err=d["se_err"], PL_bc=b["PL_bc"], bias_boot=b["bias"],
+                sd_boot=b["sd"], lo_pct=b["lo_pct"], hi_pct=b["hi_pct"], lo_basic=b["lo_basic"], hi_basic=b["hi_basic"],
+                eps_boot=eps_boot, hw_boot_max=b["hw_max"], seconds=time.perf_counter() - t0)
+
+
+def boundary_job(args):
+    """Plug-in estimate only, from the same random numbers as inference_job (Proposition 7(b) check)."""
+    name, n, rep = args
+    r0, r1 = INF_DESIGNS[name]
+    m = GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1))
+    rng = np.random.default_rng([list(INF_DESIGNS).index(name), n, rep])
+    L0, L1 = np.linalg.cholesky(m.S0), np.linalg.cholesky(m.S1)
+    fit = fit_gaussian(m.mu0 + rng.standard_normal((n, 2)) @ L0.T, m.mu1 + rng.standard_normal((n, 2)) @ L1.T)
+    return performance_loss(fit, INF_ALPHA, 1e-9, with_auc=False)["PL"].mid
+
+
+def inference_summary(df):
+    rows = []
+    for (name, n), d in df.groupby(["design", "n"], sort=False):
+        truth, R = d.PL_true.iloc[0], len(d)
+        row = dict(design=name, n=n, reps=R, PL_true=truth, bias=d.PL_hat.mean() - truth,
+                   bias_bc=d.PL_bc.mean() - truth, rmse=float(np.sqrt(((d.PL_hat - truth) ** 2).mean())),
+                   rmse_bc=float(np.sqrt(((d.PL_bc - truth) ** 2).mean())), sd_hat=d.PL_hat.std(ddof=1),
+                   se_delta_mean=d.se_delta.mean(), sd_boot_mean=d.sd_boot.mean())
+        for k in ("delta", "pct", "basic"):
+            cov = ((d[f"lo_{k}"] <= truth) & (truth <= d[f"hi_{k}"])).mean()
+            row.update({f"cover_{k}": cov, f"cover_{k}_mcse": float(np.sqrt(cov * (1 - cov) / R)),
+                        f"width_{k}": (d[f"hi_{k}"] - d[f"lo_{k}"]).mean()})
+        row.update(se_err_rel_max=(d.se_err / d.se_delta).max(), refined=(d.eps_delta < 1e-8).mean(),
+                   hw_boot_rel_max=(d.hw_boot_max / d.sd_boot).max(), pl_bc_neg=(d.PL_bc < 0).mean(),
+                   seconds_mean=d.seconds.mean(), seconds_max=d.seconds.max())
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _single_threaded_workers():
+    """Worker processes inherit these settings, so that each uses one BLAS thread and the pool does
+    not oversubscribe the cores."""
+    for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ.setdefault(k, "1")
+
+
+def run_inference(workers=6):
+    """Simulation study of Section 6 (results/inference_sim.csv and inference_summary.csv)."""
+    from multiprocessing import Pool
+    _single_threaded_workers()
+    truth = {name: performance_loss(GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1)), INF_ALPHA, 1e-10,
+                                    with_auc=False)["PL"].mid for name, (r0, r1) in INF_DESIGNS.items()}
+    tasks = [(name, n, rep) for name in INF_DESIGNS for n in INF_SIZES for rep in range(INF_REPS)]
+    # replications are appended to a checkpoint file as they finish, so an interrupted run resumes
+    ckpt = OUT / "inference_sim_partial.csv"
+    done = pd.read_csv(ckpt) if ckpt.exists() else pd.DataFrame()
+    finished = set(zip(done.design, done.n, done.rep)) if len(done) else set()
+    todo = [t for t in tasks if t not in finished]
+    print(f"inference: {len(finished)} replications from the checkpoint, {len(todo)} to run", flush=True)
+    t0 = time.perf_counter()
+    if todo:
+        with Pool(workers) as pool, open(ckpt, "a") as fh:
+            for k, row in enumerate(pool.imap_unordered(inference_job, todo, chunksize=1), 1):
+                pd.DataFrame([row]).to_csv(fh, header=fh.tell() == 0, index=False)
+                fh.flush()
+                if k % 50 == 0:
+                    print(f"inference: {k}/{len(todo)} replications [{time.perf_counter() - t0:.0f}s]", flush=True)
+    df = pd.read_csv(ckpt).drop_duplicates(["design", "n", "rep"])
+    df["design"] = pd.Categorical(df.design, list(INF_DESIGNS))
+    df = df.sort_values(["design", "n", "rep"]).reset_index(drop=True)
+    df["design"] = df.design.astype(str)
+    df["PL_true"] = df.design.map(truth)
+    df.to_csv(OUT / "inference_sim.csv", index=False)
+    ckpt.unlink()
+    summ = inference_summary(df)
+    # Proposition 7(b): where the loss vanishes, the plug-in bias is approximately tr(H V)/2; checked
+    # against the mean of INF_BOUNDARY_REPS plug-in estimates (the first INF_REPS are those of df)
+    for c in ("bias_theory", "hessian_rank", "bias_large", "bias_large_mcse"):
+        summ[c] = np.nan
+    for name, (r0, r1) in INF_DESIGNS.items():
+        if truth[name] == 0:
+            m = GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1))
+            H = pl_hessian(m, INF_ALPHA)
+            ev = np.linalg.eigvalsh(H)      # eigenvalues below 1e-3 of the largest are second-difference error
+            for k in summ.index[summ.design == name]:
+                n = int(summ.at[k, "n"])
+                with Pool(workers) as pool:
+                    est = np.array(pool.map(boundary_job, [(name, n, r) for r in range(INF_BOUNDARY_REPS)], chunksize=20))
+                summ.loc[k, ["bias_theory", "hessian_rank", "bias_large", "bias_large_mcse"]] = [
+                    0.5 * np.trace(H @ parameter_covariance(m, n, n)), int((np.abs(ev) > 1e-3 * np.abs(ev).max()).sum()),
+                    est.mean(), est.std(ddof=1) / np.sqrt(est.size)]
+    summ.to_csv(OUT / "inference_summary.csv", index=False)
+    print(summ.to_string(float_format=lambda v: f"{v:.4f}"), flush=True)
+
+
+# =============================================================================================
+# Part 8. Application: NIST BSSR1 score fusion (Section 7)
 # =============================================================================================
 MATCHERS = {"face_C": "face/C", "face_G": "face/G", "finger_LI": "li/V", "finger_RI": "ri/V"}
 
@@ -1559,7 +1823,7 @@ def prepare_bssr1_set1(root, out):
 
 def prepare_bssr1(source, data=None):
     """Convert the NIST BSSR1 download (bssr1.zip, or the folder it was extracted to) into the
-    three .npz files used by Section 8. Source: https://www.nist.gov/itl/iad/btg/nist-biometric-scores-set-bssr1"""
+    three .npz files used by Section 7. Source: https://www.nist.gov/itl/iad/btg/nist-biometric-scores-set-bssr1"""
     data = Path(data or DATA)
     data.mkdir(parents=True, exist_ok=True)
     source, tmp = Path(source), None
@@ -1733,7 +1997,7 @@ def full_fit(sets, rng):
     return models
 
 
-def repeated_splits(sets, R=50, R_model=20, seed=2026):
+def repeated_splits(sets, R=50, R_model=50, seed=2026):
     rng = np.random.default_rng(seed)
     rows = []
     for name, sname, keys in CONFIGS:
@@ -1798,10 +2062,10 @@ def bssr1_summarise(full, splits, pboot):
 
 
 def run_bssr1():
-    """Section 8: full-data fit, repeated subject-disjoint splits and the parametric bootstrap."""
+    """Section 7: full-data fit, repeated subject-disjoint splits, parametric bootstrap and inference."""
     files = [DATA / f for f in ("bssr1_set1.npz", "bssr1_set2_face.npz", "bssr1_set3_finger.npz")]
     if not all(f.exists() for f in files):
-        print(f"BSSR1 data not found in {DATA}: run once with --bssr1 <bssr1.zip>; Section 8 skipped", flush=True)
+        print(f"BSSR1 data not found in {DATA}: run once with --bssr1 <bssr1.zip>; Section 7 skipped", flush=True)
         return
     rng = np.random.default_rng(11)
     sets = load_sets()
@@ -1811,6 +2075,32 @@ def run_bssr1():
     splits = repeated_splits(sets)
     pboot = parametric_bootstrap(models)
     bssr1_summarise(pd.read_csv(OUT / "bssr1_fullfit.csv"), splits, pboot)
+    bssr1_inference(models, splits)
+
+
+def bssr1_inference(models, splits, alphas=(0.001, 0.01)):
+    """Standard errors of the model-based loss (results/bssr1_inference.csv). Half-sampling over
+    subjects: the root mean squared deviation of the losses fitted on random halves of the subjects
+    from their mean, a Monte Carlo version of the delete-d jackknife with d = n/2 (Shao and Wu 1989),
+    which respects the dependence between comparisons that share a subject and includes the
+    re-estimation of the transformations; and, for contrast, the delta method of pl_delta_interval,
+    which treats all comparisons as independent Gaussian observations."""
+    full = pd.read_csv(OUT / "bssr1_fullfit.csv").set_index("config")
+    rows = []
+    for name, (model, _, n_gen, n_imp) in models.items():
+        s = splits[splits.config == name]
+        for a in alphas:
+            pl_full = float(full.loc[name, f"PL_model_{a}"])
+            half = s[f"PL_model_{a}"].dropna().to_numpy()
+            se_half = float(np.sqrt(np.mean((half - half.mean()) ** 2)))     # delete-d jackknife, d = n/2
+            d = pl_delta_interval(model, n_imp, n_gen, a, se_rtol=0.01)
+            rows.append(dict(config=name, alpha=a, PL_model=pl_full, n_half=half.size, se_half=se_half,
+                             lo_half=pl_full - 1.96 * se_half, hi_half=pl_full + 1.96 * se_half,
+                             se_delta_iid=d["se"], eps=d["eps"], grad_err=d["grad_err"], se_err=d["se_err"]))
+            print(rows[-1], flush=True)
+    df = pd.DataFrame(rows)
+    df.to_csv(OUT / "bssr1_inference.csv", index=False)
+    return df
 
 
 # =============================================================================================
@@ -1855,14 +2145,14 @@ SEQ = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e
        "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
 
 
-W1, W2 = 3.3, 6.85      # single / double column widths (inches) for the 174 mm text block
+W1, W2 = 3.3, 4.8       # figure widths (inches); 4.8 in is the printed text width
 
 
 def fig1_heatmaps():
     t = pd.read_csv(OUT / "bivariate_table.csv")
     from matplotlib.colors import LinearSegmentedColormap
     cmap = LinearSegmentedColormap.from_list("seq", ["#f6f9fe"] + SEQ)
-    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.9), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.45), constrained_layout=True)
     for ax, a in zip(axes, (0.05, 0.01)):
         d = t[t.alpha == a]
         M = np.array([[d[(d.rho0 == r0) & (d.rho1 == r1)].PL.iloc[0] for r1 in BIV_LABELS] for r0 in BIV_LABELS])
@@ -1870,7 +2160,7 @@ def fig1_heatmaps():
         for i in range(5):
             for j in range(5):
                 v = M[i, j]
-                ax.text(j, i, f"{v:.4f}", ha="center", va="center", fontsize=7.2,
+                ax.text(j, i, f"{v:.4f}", ha="center", va="center", fontsize=5.6,
                         color="white" if v > 0.25 else INK)
         ax.set_xticks(range(5), BIV_LABELS)
         ax.set_yticks(range(5), BIV_LABELS)
@@ -1889,7 +2179,9 @@ def fig1_heatmaps():
 def fig3_transposition():
     """ROC transposition under covariance swap (Theorem 3) and the two loss curves."""
     c = pd.read_csv(OUT / "bivariate_curves.csv")
-    fig, axes = plt.subplots(1, 3, figsize=(W2, 2.35), constrained_layout=True)
+    fig = plt.figure(figsize=(W2, 4.3), constrained_layout=True)
+    gs = fig.add_gridspec(2, 2)
+    axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, :])]
     for ax, (r0, r1) in zip(axes[:2], [("N", "P"), ("P", "N")]):
         d = c[(c.rho0 == r0) & (c.rho1 == r1)].sort_values("alpha")
         ax.plot(d.alpha, d.TPR_f, color=BLUE, label="full ($Q_f$)")
@@ -1900,7 +2192,7 @@ def fig3_transposition():
         ax.set_xlabel(r"false positive rate $\alpha$")
         ax.set_ylabel("true positive rate")
         ax.set_title(f"ROC, ({r0},{r1})", color=INK, fontsize=9)
-    axes[0].legend(loc="upper left", fontsize=7)
+    axes[0].legend(loc="upper left", fontsize=6.5)
     ax = axes[2]
     for (r0, r1), col, ls in [(("N", "P"), BLUE, "-"), (("P", "N"), ORANGE, "--")]:
         d = c[(c.rho0 == r0) & (c.rho1 == r1)].sort_values("alpha")
@@ -1916,7 +2208,7 @@ def fig3_transposition():
 def fig2_curves():
     """Loss curves for symmetric (homoscedastic) and asymmetric scenarios, with closed forms."""
     c = pd.read_csv(OUT / "bivariate_curves.csv")
-    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.4), constrained_layout=True, sharey=False)
+    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.6), constrained_layout=True, sharey=False)
     ax = axes[0]
     mu0, mu1 = np.array([1.0, 2.0]), np.array([2.0, 0.5])
     for lev, col, ls in [("M", BLUE, "-"), ("H", ORANGE, "--"), ("P", AQUA, "-.")]:
@@ -1932,7 +2224,7 @@ def fig2_curves():
     ax.set_xlabel(r"$\alpha$")
     ax.set_ylabel(r"$\mathrm{PL}(\alpha)$")
     ax.set_title(r"(a) shared covariance, $\rho_0=\rho_1$", color=INK, fontsize=9)
-    ax.legend(fontsize=6.8, loc="upper right")
+    ax.legend(fontsize=5.8, loc="upper right")
     ax = axes[1]
     for (r0, r1), col, ls in [(("N", "H"), BLUE, "-"), (("L", "P"), ORANGE, "--"), (("M", "P"), AQUA, "-.")]:
         d = c[(c.rho0 == r0) & (c.rho1 == r1)].sort_values("alpha")
@@ -1947,7 +2239,7 @@ def fig2_curves():
 
 def fig4_mc():
     mc = pd.read_csv(OUT / "bivariate_mc.csv")
-    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.4), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.5), constrained_layout=True)
     ax = axes[0]
     d = mc[mc.N == 10000]
     ax.plot([0, 0.31], [0, 0.31], color=AXIS, lw=0.8)
@@ -1969,26 +2261,29 @@ def fig4_mc():
     ax.set_ylabel(r"$(\overline{\mathrm{PL}}_{MC}-\mathrm{PL})/\mathrm{SE}$")
     ax.set_xlabel("scenario")
     ax.set_title("(b) standardised discrepancy", color=INK, fontsize=9)
-    ax.legend(fontsize=7, loc="lower left", ncols=2, markerscale=1.6)
+    ax.legend(fontsize=6, loc="lower left", ncols=2, markerscale=1.4)
     _save_fig(fig, "Fig4.pdf")
 
 
 def fig5_highdim():
     r = pd.read_csv(OUT / "highdim_random.csv")
-    fig, axes = plt.subplots(1, 4, figsize=(W2, 2.0), constrained_layout=True, sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 2, figsize=(W2, 3.9), constrained_layout=True, sharex=True, sharey=True)
+    axes = axs.ravel()
     for ax, (p, d) in zip(axes, r.groupby("p")):
         ax.plot(d.dAUC, d.PL01, ls="none", marker="o", ms=3.0, color=BLUE, mec="white", mew=0.4, alpha=0.9)
         rho = d[["dAUC", "PL01"]].corr(method="spearman").iloc[0, 1]
         ax.set_title(f"$p={p}$  (Spearman {rho:.2f})", color=INK, fontsize=8)
+    for ax in axs[1]:
         ax.set_xlabel(r"$\Delta\mathrm{AUC}$")
-    axes[0].set_ylabel(r"$\mathrm{PL}(0.01)$")
+    for ax in axs[:, 0]:
+        ax.set_ylabel(r"$\mathrm{PL}(0.01)$")
     _save_fig(fig, "Fig5.pdf")
 
 
 def fig6_bssr1():
     s = pd.read_csv(OUT / "bssr1_summary.csv")
     configs = list(dict.fromkeys(s.config))
-    fig, axes = plt.subplots(1, 2, figsize=(W2, 2.5), constrained_layout=True, sharey=True)
+    fig, axes = plt.subplots(2, 1, figsize=(W2, 4.3), constrained_layout=True, sharex=False)
     for ax, a in zip(axes, (0.001, 0.01)):
         d = s[s.alpha == a].set_index("config").loc[configs]
         y = np.arange(len(configs))[::-1]
@@ -2005,8 +2300,8 @@ def fig6_bssr1():
         ax.set_title(f"FAR = {a:g}", color=INK, fontsize=9)
     h, l = axes[0].get_legend_handles_labels()
     order = [2, 1, 0]
-    fig.legend([h[i] for i in order], [l[i] for i in order], loc="lower center", ncols=3, fontsize=7,
-               bbox_to_anchor=(0.5, -0.08))
+    fig.legend([h[i] for i in order], [l[i] for i in order], loc="lower center", ncols=2, fontsize=6.5,
+               bbox_to_anchor=(0.5, -0.09))
     _save_fig(fig, "Fig6.pdf")
 
 
@@ -2055,8 +2350,8 @@ def table_biv():
         if i < 4:
             rows.append("\\midrule")
     return ("\\begin{table}[t]\n\\caption{Error-bounded values for the bivariate design at $\\alpha=0.05$, and "
-            "$\\PL(0.01)$. $\\rho_0$ and $\\rho_1$ are the correlations of the negative and positive class "
-            "(N, L, M, H, P $=0, 0.25, 0.5, 0.75, 0.99$). Half-widths of the enclosures are below "
+            "$\\PL(0.01)$. The correlations $\\rho_0$ and $\\rho_1$ of the negative and positive class take "
+            "the values N, L, M, H, P $=0, 0.25, 0.5, 0.75, 0.99$. Half-widths of the enclosures are below "
             f"${sci_up(a5.PL_hw.max())}$ for $\\PL(0.05)$, below ${sci_up(max(a5.AUC_f_hw.max(), a5.AUC_nb_hw.max()))}$ for the AUCs and "
             f"below ${sci_up(a1.PL_hw.max())}$ for $\\PL(0.01)$}}\\label{{tab:biv}}\n"
             "\\footnotesize\n\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}llccccccc@{}}\n\\toprule\n"
@@ -2205,9 +2500,10 @@ def _corr(text):
     return f"{vals[0]:.2f}" if len(vals) == 1 else f"{max(vals, key=abs):.2f}"
 
 
-def table_bssr1():
+def table_bssr1(with_se=False):
     s = pd.read_csv(OUT / "bssr1_summary.csv")
     full = pd.read_csv(OUT / "bssr1_fullfit.csv").set_index("config")
+    inf = pd.read_csv(OUT / "bssr1_inference.csv").set_index(["config", "alpha"]) if with_se else None
     short = {"face C + face G": "face C $+$ G", "finger LI + finger RI": "finger LI $+$ RI",
              "face C + finger LI": "face C $+$ finger LI", "all four matchers": "all four"}
     pp = lambda v: f"{100 * v:+.2f}".replace("+", "") if abs(v) >= 5e-5 else "0.00"
@@ -2220,26 +2516,85 @@ def table_bssr1():
                 lead = f"{short[cfg]} & {fr['set'][-1]} & {int(fr.n_gen)} & ${_corr(fr.corr_gen)}/{_corr(fr.corr_imp)}$"
             else:
                 lead = " & & & "
-            rows.append(f"{lead} & {a:g} & ${pp(r.PL_model_full)}$ & ${pp(r.PL_emp_mean)}$ & "
+            model = f"${pp(r.PL_model_full)}$"
+            if with_se:
+                model += f" $({100 * inf.loc[(cfg, a), 'se_half']:.2f})$"
+            rows.append(f"{lead} & {a:g} & {model} & ${pp(r.PL_emp_mean)}$ & "
                         f"$[{pp(r.PL_emp_q025)}, {pp(r.PL_emp_q975)}]$ & ${pp(r.PL_pboot_mean)}$ "
                         f"$({100 * r.PL_pboot_sd:.2f})$\\\\")
         rows.append("\\midrule")
     return ("\\begin{table}[t]\n\\caption{BSSR1 fusion; losses in percentage points. Correlations are those of "
             "the transformed genuine/impostor scores (largest absolute value for four matchers). Model: "
             "error-bounded $\\PL(\\alpha)$ of the Gaussian model fitted to all subjects (half-widths below "
-            "$10^{-8}$). Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\\% and "
+            "$10^{-8}$)" + (", with its half-sampling standard error over subjects in parentheses" if with_se else "")
+            + ". Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\\% and "
             "97.5\\% quantiles. Bootstrap: mean (standard deviation) of the same held-out loss for data "
-            "simulated from the fitted Gaussian model}\\label{tab:bssr1}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+            "simulated from the fitted Gaussian model}\\label{tab:bssr1}\n\\footnotesize\\setlength{\\tabcolsep}{"
+            + ("2" if with_se else "3") + "pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}lcccccccc@{}}\n\\toprule\n"
             "fusion & set & genuine & corr. & FAR & model & held-out & range & bootstrap\\\\\n\\midrule\n"
             + "\n".join(rows[:-1]) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
+def table_bench_compact():
+    d = pd.read_csv(OUT / "bench_pl_davies.csv")
+    b = pd.read_csv(OUT / "bench_pl.csv")
+    rows = []
+    for model in dict.fromkeys(d.model):
+        for k, a in enumerate((0.05, 1e-4, 1e-6)):
+            if a == 0.05:
+                e = b[(b.model == model) & (b.setting == "eps=1e-10")].iloc[0]
+            else:
+                e = d[(d.model == model) & (d.alpha == a) & (d.method == "error-bounded")].iloc[0]
+            x = d[(d.model == model) & (d.alpha == a) & (d.method == "Davies + Prop. 6") & (d.setting == "acc=1e-10")]
+            dv = (f"${sci(x.precision.iloc[0])}$ & {_secs(x.seconds.iloc[0])}"
+                  if len(x) and np.isfinite(x.precision.iloc[0]) else "failed & ---")
+            alab = "0.05" if a == 0.05 else f"${_pow10(a)}$"
+            rows.append(f"{model if k == 0 else ''} & {alab} & {e.PL:.6f} & ${sci(e.precision)}$ & {_secs(e.seconds)} & {dv} \\\\")
+        rows.append("\\midrule")
+    return ("\\begin{table}[t]\n\\caption{Computing $\\PL(\\alpha)$ with guaranteed error bounds: Algorithm~\\ref{alg:pl} "
+            "at $\\varepsilon=10^{-10}$ and the algorithm of Davies (1980) combined with Proposition~\\ref{prop:prop} at "
+            "acc $=10^{-10}$. Half-widths of the enclosures and times in seconds on one core, for the bivariate "
+            "configurations (N,P) and (L,H) and two random models of Section~\\ref{sec:highdim}}\\label{tab:benchcompact}\n"
+            "\\footnotesize\\setlength{\\tabcolsep}{4pt}\n"
+            "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}llccccc@{}}\n\\toprule\n"
+            " & & & \\multicolumn{2}{c}{Algorithm~\\ref{alg:pl}} & \\multicolumn{2}{c}{Davies + Prop.~\\ref{prop:prop}}\\\\\n"
+            "\\cmidrule(lr){4-5}\\cmidrule(lr){6-7}\n"
+            "model & $\\alpha$ & $\\PL(\\alpha)$ & half-width & time & half-width & time\\\\\n\\midrule\n"
+            + "\n".join(rows[:-1]) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
+def table_inference():
+    s = pd.read_csv(OUT / "inference_summary.csv")
+    reps = int(s.reps.iloc[0])
+    mcse = max(s[f"cover_{k}_mcse"].max() for k in ("delta", "pct", "basic"))
+    num = lambda v, sign="": (f"{v:{sign}.4f}" if abs(v) >= 1e-3 or v == 0
+                              else ("+" if sign and v > 0 else "") + sci(v, 1))
+    rows = []
+    for _, r in s.iterrows():
+        cov = lambda k: f"{100 * r[f'cover_{k}']:.1f}"
+        rows.append(f"{r.design} & {int(r.n)} & {r.PL_true:.4f} & ${num(r.bias, '+')}$ & ${num(r.bias_bc, '+')}$ & "
+                    f"${num(r.sd_hat)}$ & ${num(r.se_delta_mean)}$ & {cov('delta')} & {cov('pct')} & {cov('basic')} \\\\")
+    return ("\\begin{table}[t]\n\\caption{Estimating $\\PL(0.05)$ in the bivariate design from $n_y$ observations per "
+            f"class ({reps} replications, {INF_BOOT} bootstrap samples). Bias of the plug-in and bootstrap "
+            "bias-corrected estimates, standard deviation (SD) of the plug-in estimate and mean delta-method "
+            "standard error (SE), and coverage (\\%) of nominal 95\\% intervals: Wald (delta method), percentile "
+            f"and basic bootstrap; the Monte Carlo standard errors of the coverages are at most {100 * mcse:.1f} "
+            "percentage points}\\label{tab:inference}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+            "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}lrcccccccc@{}}\n\\toprule\n"
+            " & & & \\multicolumn{2}{c}{bias} & & & \\multicolumn{3}{c}{coverage (\\%)}\\\\\n"
+            "\\cmidrule(lr){4-5}\\cmidrule(lr){8-10}\n"
+            "design & $n_y$ & $\\PL(0.05)$ & plug-in & corrected & SD & SE & Wald & percentile & basic\\\\\n\\midrule\n"
+            + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
 def latex_tables():
-    """LaTeX source of Tables 1 to 6 of the paper, built from the CSV files in OUT."""
-    gens = {"table1_bivariate": table_biv, "table2_benchmark_cdf": table_bench_cdf,
-            "table3_benchmark_pl": table_bench_pl, "table4_strict_operating_points": table_bench_strict,
-            "table5_ar1": table_ar1, "table6_bssr1": table_bssr1}
+    """LaTeX source of Tables 1 to 5 of the paper and S1 to S3 of Online Resource 1, built from the
+    CSV files in OUT."""
+    gens = {"table1_bivariate": table_biv, "table2_ar1": table_ar1, "table3_benchmark": table_bench_compact,
+            "table4_inference": table_inference, "table5_bssr1": lambda: table_bssr1(with_se=True),
+            "tableS1_benchmark_cdf": table_bench_cdf, "tableS2_benchmark_pl": table_bench_pl,
+            "tableS3_strict_operating_points": table_bench_strict}
     out = {}
     for name, gen in gens.items():
         try:
@@ -2260,7 +2615,7 @@ def write_tables():
 # =============================================================================================
 # Part 11. Command line: reproduce everything in one run
 # =============================================================================================
-STEPS = ("tests", "bivariate", "highdim", "benchmark", "bssr1", "figures", "tables")
+STEPS = ("tests", "bivariate", "highdim", "benchmark", "inference", "bssr1", "figures", "tables")
 
 
 def main(argv=None):
@@ -2270,7 +2625,7 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=OUT, help="folder for the results (default: %(default)s)")
     ap.add_argument("--data", type=Path, default=DATA, help="folder for the prepared BSSR1 files")
     ap.add_argument("--bssr1", type=Path, default=None, help="bssr1.zip from NIST, or its extracted folder")
-    ap.add_argument("--workers", type=int, default=6, help="worker processes for Section 7")
+    ap.add_argument("--workers", type=int, default=6, help="worker processes for the parallel studies")
     args = ap.parse_args(argv)
     steps = [s.strip() for s in args.only.split(",") if s.strip()]
     unknown = sorted(set(steps) - set(STEPS))
@@ -2295,6 +2650,8 @@ def main(argv=None):
             run_highdim(args.workers)
         elif step == "benchmark":
             run_benchmark()
+        elif step == "inference":
+            run_inference(args.workers)
         elif step == "bssr1":
             if args.bssr1 is not None:
                 prepare_bssr1(args.bssr1, DATA)

@@ -2,18 +2,16 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23472531.svg)](https://doi.org/10.5281/zenodo.23472531)
 
-Code and numerical results for
-
-> M. Syamsuddin Wisnubroto, Sumardi and Nanang Susyanto, *Computing the fixed-false-positive-rate loss
-> from assuming independence in Gaussian classification with guaranteed error bounds*
-> (submitted to *Computational Statistics*).
+Code and numerical results for a manuscript by M. Syamsuddin Wisnubroto, Sumardi and Nanang Susyanto
+(under review; the reference will be added on publication).
 
 For two Gaussian classes, `plbound` computes guaranteed enclosures of the loss in true positive rate at a
 fixed false positive rate, PL(alpha) = TPR_full(alpha) - TPR_independence(alpha), incurred when a
 likelihood-ratio classifier replaces the class covariance matrices by their diagonals. The generalized
 chi-square distribution functions involved are evaluated by midpoint-rule inversion of the characteristic
 function with explicit bounds on aliasing, truncation and rounding error, and the bounds are propagated
-through the quantile that defines the threshold.
+through the quantile that defines the threshold. From two samples, the loss is estimated by the plug-in
+estimate with delta-method and parametric-bootstrap confidence intervals.
 
 Everything is in one file, [`code/plbound.py`](code/plbound.py): the module, and the script that
 reproduces every number, table and figure of the paper in one run.
@@ -21,8 +19,8 @@ reproduces every number, table and figure of the paper in one run.
 ```bash
 git clone https://github.com/syamsuddinexcellent/plbound.git
 cd plbound/code && pip install -r requirements.txt
-python plbound.py                              # tests and Sections 5-8, about 25 minutes
-python plbound.py --bssr1 path/to/bssr1.zip    # first run only: converts the NIST scores for Section 8
+python plbound.py                              # tests and Sections 5-7, about 3.5 hours
+python plbound.py --bssr1 path/to/bssr1.zip    # first run only: converts the NIST scores for Section 7
 ```
 
 ```python
@@ -38,7 +36,7 @@ print(pc.performance_loss(model, alpha=0.05, eps=1e-10)["PL"])   # 0.2924439279 
 |---|---|
 | [`code/`](code) | `plbound.py` (module and reproduction script) and its documentation, [`code/README.md`](code/README.md) |
 | [`results/`](results) | every number reported in the paper as CSV files, with the figures (`results/figures`) and LaTeX tables (`results/tables`) |
-| [`data/`](data) | instructions for obtaining the NIST BSSR1 scores used in Section 8 |
+| [`data/`](data) | instructions for obtaining the NIST BSSR1 scores used in Section 7 |
 
 Requirements: Python 3.9 or later with numpy, scipy, pandas and matplotlib; R with CompQuadForm for
 the benchmark. Released under the MIT licence.
@@ -51,6 +49,6 @@ Please cite the paper and, for the code, the archived release:
 > assumption in Gaussian classification, computed with guaranteed error bounds. Version 1.0.0. Zenodo.
 > https://doi.org/10.5281/zenodo.23472531
 
-The DOI 10.5281/zenodo.23472531 identifies version 1.0.0, the version submitted with the paper;
-10.5281/zenodo.23472530 always resolves to the latest version. GitHub's "Cite this repository" button
+The DOI 10.5281/zenodo.23472531 identifies version 1.0.0, the first release, which does not yet contain
+the inference of Section 6; 10.5281/zenodo.23472530 always resolves to the latest version. GitHub's "Cite this repository" button
 uses [`CITATION.cff`](CITATION.cff).

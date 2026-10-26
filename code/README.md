@@ -1,7 +1,6 @@
 # plbound — fixed-FPR loss of the independence assumption with guaranteed error bounds
 
-Online Resource 1 for *Computing the fixed-false-positive-rate loss from assuming independence in
-Gaussian classification with guaranteed error bounds*, Computational Statistics.
+Companion code for a manuscript under review (the reference will be added on publication).
 Repository: <https://github.com/syamsuddinexcellent/plbound>; archived version 1.0.0:
 <https://doi.org/10.5281/zenodo.23472531>.
 Authors: M. Syamsuddin Wisnubroto, Sumardi, Nanang Susyanto.
@@ -19,16 +18,17 @@ pip install -r requirements.txt
 python plbound.py
 ```
 
-This runs the exactness tests and Sections 5 to 8 and writes every number, figure and table of the
+This runs the exactness tests and Sections 5 to 7 and writes every number, figure and table of the
 paper: the CSV files to `../results`, the figures to `../results/figures` (`Fig1.pdf` … `Fig6.pdf`)
-and the LaTeX tables to `../results/tables`. The full run takes about 25 minutes on a laptop
-(Apple M1, six worker processes; Section 8 needs about 8 GB of memory).
+and the LaTeX tables to `../results/tables`. The full run takes about three and a half hours on a laptop
+(Apple M1, seven worker processes), most of it for the simulation study of Section 6, which writes a
+checkpoint and resumes where it stopped if it is interrupted. Section 7 needs about 8 GB of memory.
 
 Two parts need resources outside Python. Without them, those steps are skipped with a message.
 
-* **Section 6 (benchmark):** needs R with the package CompQuadForm. The R code is contained in
+* **Section 5.3 (benchmark):** needs R with the package CompQuadForm. The R code is contained in
   `plbound.py`.
-* **Section 8 (application):** needs the NIST BSSR1 scores. Download `bssr1.zip` (178 MB,
+* **Section 7 (application):** needs the NIST BSSR1 scores. Download `bssr1.zip` (178 MB,
   MD5 `43f40a6383c8b7a485f17dcfc98ad7bb`) from
   <https://www.nist.gov/itl/iad/btg/nist-biometric-scores-set-bssr1> and pass it once:
 
@@ -42,10 +42,10 @@ Options:
 
 | option | meaning |
 |---|---|
-| `--only tests,bivariate` | run a subset of `tests`, `bivariate`, `highdim`, `benchmark`, `bssr1`, `figures`, `tables` |
+| `--only tests,bivariate` | run a subset of `tests`, `bivariate`, `highdim`, `benchmark`, `inference`, `bssr1`, `figures`, `tables` |
 | `--out DIR` | write the results elsewhere (default `../results`) |
 | `--data DIR` | folder for the prepared BSSR1 files (default `../data`) |
-| `--workers N` | worker processes for Section 7 (default 6) |
+| `--workers N` | worker processes for Sections 5.2 and 6 (default 6) |
 
 Timings in the benchmark depend on the machine. All other results are deterministic (fixed random
 seeds).
@@ -71,15 +71,18 @@ print(out["dAUC"])        # AUC_f - AUC_nb, also error-bounded
 | `performance_loss(model, alpha, eps)` | enclosures of TPR_f, TPR_nb, PL(alpha), AUC_f, AUC_nb (Algorithm 1) |
 | `pl_curve(model, alphas)` | error-bounded loss curves via one FFT per law |
 | `homoscedastic_pl`, `homoscedastic_max_pl`, `kantorovich_bound` | closed forms of Proposition 2 |
+| `fit_gaussian(X0, X1)` | plug-in model from two samples (rows are observations) |
+| `pl_delta_interval(model, n0, n1, alpha)` | plug-in estimate with delta-method standard error and Wald interval; the numerical error of the gradient is bounded (Section 6) |
+| `pl_bootstrap(model, n0, n1, alpha, B, rng)` | parametric bootstrap: bias-corrected estimate, percentile and basic intervals |
 
 ## Layout of `plbound.py`
 
 | part | content |
 |---|---|
 | 1 | generalized chi-square laws, error-bounded inversion, propagation through the quantile, the loss |
-| 2 | covariance designs of Sections 5 and 7 |
+| 2 | covariance designs of Sections 5 and 6 |
 | 3 | independent check of Table 1 by a one-dimensional conditioning integral |
 | 4 | exactness tests against laws with known distribution functions |
-| 5–8 | Sections 5 (bivariate design), 7 (higher dimensions), 6 (benchmark, with the R code) and 8 (BSSR1) |
+| 5–8 | Sections 5.1 (bivariate design), 5.2 (higher dimensions), 5.3 (benchmark, with the R code), 6 (simulation study of the inference, part 7b) and 7 (BSSR1) |
 | 9–10 | figures and LaTeX tables |
 | 11 | command line |

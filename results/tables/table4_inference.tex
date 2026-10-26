@@ -1,0 +1,18 @@
+\begin{table}[t]
+\caption{Estimating $\PL(0.05)$ in the bivariate design from $n_y$ observations per class (200 replications, 100 bootstrap samples). Bias of the plug-in and bootstrap bias-corrected estimates, standard deviation (SD) of the plug-in estimate and mean delta-method standard error (SE), and coverage (\%) of nominal 95\% intervals: Wald (delta method), percentile and basic bootstrap; the Monte Carlo standard errors of the coverages are at most 2.7 percentage points}\label{tab:inference}
+\footnotesize\setlength{\tabcolsep}{3pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep\fill}lrcccccccc@{}}
+\toprule
+ & & & \multicolumn{2}{c}{bias} & & & \multicolumn{3}{c}{coverage (\%)}\\
+\cmidrule(lr){4-5}\cmidrule(lr){8-10}
+design & $n_y$ & $\PL(0.05)$ & plug-in & corrected & SD & SE & Wald & percentile & basic\\
+\midrule
+(N,P) & 250 & 0.2924 & $+0.0068$ & $+0.0084$ & $0.1193$ & $0.1301$ & 93.5 & 93.0 & 88.0 \\
+(N,P) & 2500 & 0.2924 & $-0.0042$ & $-0.0010$ & $0.0366$ & $0.0371$ & 96.0 & 92.5 & 94.5 \\
+(L,H) & 250 & 0.0243 & $+0.0013$ & $+4.5\times10^{-4}$ & $0.0120$ & $0.0113$ & 93.0 & 93.0 & 83.0 \\
+(L,H) & 2500 & 0.0243 & $+2.0\times10^{-4}$ & $+2.3\times10^{-4}$ & $0.0036$ & $0.0039$ & 95.5 & 95.0 & 93.5 \\
+(N,N) & 250 & 0.0000 & $+5.5\times10^{-4}$ & $-6.1\times10^{-6}$ & $6.6\times10^{-4}$ & $8.0\times10^{-4}$ & 100.0 & 0.0 & 99.5 \\
+(N,N) & 2500 & 0.0000 & $+4.5\times10^{-5}$ & $-1.1\times10^{-5}$ & $5.2\times10^{-5}$ & $6.9\times10^{-5}$ & 100.0 & 0.0 & 98.5 \\
+\botrule
+\end{tabular*}
+\end{table}

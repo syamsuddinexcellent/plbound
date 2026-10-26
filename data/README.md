@@ -1,6 +1,6 @@
 # Data
 
-Section 8 of the paper uses the NIST Biometric Scores Set Release 1 (BSSR1), which is publicly available from
+Section 7 of the paper uses the NIST Biometric Scores Set Release 1 (BSSR1), which is publicly available from
 <https://www.nist.gov/itl/iad/btg/nist-biometric-scores-set-bssr1> and is not redistributed here.
 
 Download `bssr1.zip` (178 MB, MD5 `43f40a6383c8b7a485f17dcfc98ad7bb`) and pass it once to the reproduction
