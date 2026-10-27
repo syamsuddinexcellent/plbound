@@ -65,7 +65,8 @@ DATA = REPO / "data"              # prepared NIST BSSR1 score matrices (Section 
 U = np.finfo(float).eps / 2          # unit roundoff
 LN2 = math.log(2.0)
 N_BLOCKS = 160                        # dyadic blocks used in the tail bounds
-NORMAL_CDF_ERR = 1e-15                # accuracy of scipy's ndtr / ndtri
+NORMAL_CDF_ERR = 1e-15                # absolute accuracy of scipy's ndtr
+NORMAL_TAIL_RELERR = 1e-13            # relative accuracy of ndtr in the tail (Cephes: 3.4e-14 on [-13, 0])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -544,12 +545,24 @@ class Enclosure:
         return f"{self.mid:.10f} +/- {self.half_width:.2e}"
 
 
-def error_bounded_quantile(g: GenChi2, p, eps=1e-10, evaluator=None, max_terms=2 ** 24):
-    """Interval (t_lo, t_hi) error-bounded to contain F^{-1}(p), plus the evaluator used."""
+def error_bounded_quantile(g: GenChi2, p, eps=1e-10, evaluator=None, max_terms=2 ** 24, tail=None):
+    """Interval (t_lo, t_hi) error-bounded to contain F^{-1}(p), plus the evaluator used. tail = 1 - p,
+    if given, is used exactly instead of the rounded p (this matters for small upper-tail levels)."""
     if g.is_normal:
-        t = g.kappa0 + g.sigma0 * float(special.ndtri(p))
+        # normal law: the bracket is verified with the upper-tail probability; ndtr is accurate to
+        # NORMAL_CDF_ERR absolutely and, in the tail, to NORMAL_TAIL_RELERR relatively
+        a = (1 - p) if tail is None else tail
+        t = g.kappa0 - g.sigma0 * float(special.ndtri(a))
+        sf = lambda x: float(special.ndtr((g.kappa0 - x) / g.sigma0))
+        err = lambda v: min(NORMAL_CDF_ERR, NORMAL_TAIL_RELERR * v)
         d = 1e-13 * (abs(t) + g.sigma0)
-        return (t - d, t + d), t, None
+        for _ in range(200):
+            lo, hi = sf(t - d), sf(t + d)
+            if lo - err(lo) > a > hi + err(hi):
+                return (t - d, t + d), t, None
+            d *= 2
+        raise RuntimeError("normal quantile bracketing failed")
+    slack = 0.0 if tail is None else 2.0 ** -53      # p = fl(1 - tail) differs from 1 - tail by less
     t0 = saddlepoint_quantile(g, p)
     if evaluator is None:
         w = 0.02 * g.sd
@@ -581,7 +594,7 @@ def error_bounded_quantile(g: GenChi2, p, eps=1e-10, evaluator=None, max_terms=2
     for _ in range(80):
         Flo, elo = evaluator(t_star - d)
         Fhi, ehi = evaluator(t_star + d)
-        if Flo + elo < p < Fhi - ehi:
+        if Flo + elo + slack < p < Fhi - ehi - slack:
             return (t_star - d, t_star + d), t_star, evaluator
         d *= 2
     raise RuntimeError("quantile bracketing failed")
@@ -589,7 +602,7 @@ def error_bounded_quantile(g: GenChi2, p, eps=1e-10, evaluator=None, max_terms=2
 
 def error_bounded_tpr(g0: GenChi2, g1: GenChi2, alpha, eps=1e-10, max_terms=2 ** 24):
     """Error-bounded enclosure of TPR(alpha) = 1 - F_1(F_0^{-1}(1 - alpha))."""
-    (t_lo, t_hi), t_star, _ = error_bounded_quantile(g0, 1 - alpha, eps, max_terms=max_terms)
+    (t_lo, t_hi), t_star, _ = error_bounded_quantile(g0, 1 - alpha, eps, max_terms=max_terms, tail=alpha)
     if g1.is_normal:
         hi = 1 - special.ndtr((t_lo - g1.kappa0) / g1.sigma0) + NORMAL_CDF_ERR
         lo = 1 - special.ndtr((t_hi - g1.kappa0) / g1.sigma0) - NORMAL_CDF_ERR
@@ -1986,7 +1999,7 @@ def full_fit(sets, rng):
         Rg, Ri = np.corrcoef(tg.T), np.corrcoef(ti.T)
         iu = np.triu_indices_from(Rg, 1)
         row = dict(config=name, set=sname, subjects=len(ss.subjects), n_gen=gen.shape[0], n_imp=imp.shape[0],
-                   corr_gen=";".join(f"{v:.3f}" for v in Rg[iu]), corr_imp=";".join(f"{v:.3f}" for v in Ri[iu]),
+                   corr_gen=";".join(f"{v:.6f}" for v in Rg[iu]), corr_imp=";".join(f"{v:.6f}" for v in Ri[iu]),
                    lambdas=";".join(f"{t['lmb']:.3f}" for t in trs), **model_pl(model, 1e-10))
         row.update({f"{k}_insample": v for k, v in evaluate(model, tg, ti, rng).items()})
         rows.append(row)
@@ -2260,7 +2273,7 @@ def fig4_mc():
     ax.set_xticks(x[::5], [f"({a},{b})" for a, b in zip(lab.rho0[::5], lab.rho1[::5])], fontsize=7)
     ax.set_ylabel(r"$(\overline{\mathrm{PL}}_{MC}-\mathrm{PL})/\mathrm{SE}$")
     ax.set_xlabel("scenario")
-    ax.set_title("(b) standardised discrepancy", color=INK, fontsize=9)
+    ax.set_title("(b) standardized discrepancy", color=INK, fontsize=9)
     ax.legend(fontsize=6, loc="lower left", ncols=2, markerscale=1.4)
     _save_fig(fig, "Fig4.pdf")
 
@@ -2287,16 +2300,17 @@ def fig6_bssr1():
     for ax, a in zip(axes, (0.001, 0.01)):
         d = s[s.alpha == a].set_index("config").loc[configs]
         y = np.arange(len(configs))[::-1]
+        d = 100 * d.select_dtypes("number")                        # percentage points
         ax.errorbar(d.PL_pboot_mean, y + 0.18, xerr=1.96 * d.PL_pboot_sd, fmt="none", ecolor=AQUA, elinewidth=3,
-                    alpha=0.55, label="Gaussian-model sampling range")
+                    alpha=0.55, label=r"parametric bootstrap, mean $\pm$ 1.96 SD")
         ax.errorbar(d.PL_emp_mean, y - 0.12, xerr=[np.clip(d.PL_emp_mean - d.PL_emp_q025, 0, None), np.clip(d.PL_emp_q975 - d.PL_emp_mean, 0, None)],
                     fmt="s", ms=4, color=ORANGE, ecolor=ORANGE, elinewidth=1, mec="white", mew=0.5,
-                    label="empirical (test halves)")
+                    label="held-out, mean and 2.5–97.5% quantiles")
         ax.plot(d.PL_model_full, y + 0.18, ls="none", marker="o", ms=5, color=BLUE, mec="white", mew=0.6,
                 label="error-bounded, fitted model")
         ax.axvline(0, color=AXIS, lw=0.8)
         ax.set_yticks(y, configs)
-        ax.set_xlabel(rf"$\mathrm{{PL}}({a})$")
+        ax.set_xlabel(rf"$\mathrm{{PL}}({a})$ (percentage points)")
         ax.set_title(f"FAR = {a:g}", color=INK, fontsize=9)
     h, l = axes[0].get_legend_handles_labels()
     order = [2, 1, 0]
@@ -2306,7 +2320,8 @@ def fig6_bssr1():
 
 
 def make_figures():
-    """Figures 1 to 6 of the paper (vector PDF)."""
+    """Figures 1 to 5 of the paper and Figure S1 of Online Resource 1 (vector PDF). The files keep the
+    numbering of an earlier draft: Fig4.pdf is Figure S1, and Fig5.pdf and Fig6.pdf are Figures 4 and 5."""
     _init_matplotlib()
     for fig in (fig1_heatmaps, fig2_curves, fig3_transposition, fig4_mc, fig5_highdim, fig6_bssr1):
         try:
@@ -2516,9 +2531,10 @@ def table_bssr1(with_se=False):
                 lead = f"{short[cfg]} & {fr['set'][-1]} & {int(fr.n_gen)} & ${_corr(fr.corr_gen)}/{_corr(fr.corr_imp)}$"
             else:
                 lead = " & & & "
-            model = f"${pp(r.PL_model_full)}$"
             if with_se:
-                model += f" $({100 * inf.loc[(cfg, a), 'se_half']:.2f})$"
+                model = f"${100 * r.PL_model_full:.3f}$ $({100 * inf.loc[(cfg, a), 'se_half']:.3f})$"
+            else:
+                model = f"${pp(r.PL_model_full)}$"
             rows.append(f"{lead} & {a:g} & {model} & ${pp(r.PL_emp_mean)}$ & "
                         f"$[{pp(r.PL_emp_q025)}, {pp(r.PL_emp_q975)}]$ & ${pp(r.PL_pboot_mean)}$ "
                         f"$({100 * r.PL_pboot_sd:.2f})$\\\\")
@@ -2528,11 +2544,11 @@ def table_bssr1(with_se=False):
             "error-bounded $\\PL(\\alpha)$ of the Gaussian model fitted to all subjects (half-widths below "
             "$10^{-8}$)" + (", with its half-sampling standard error over subjects in parentheses" if with_se else "")
             + ". Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\\% and "
-            "97.5\\% quantiles. Bootstrap: mean (standard deviation) of the same held-out loss for data "
+            "97.5\\% quantiles (a positive mean with both quantiles 0.00 means that most splits give a loss of exactly zero). Bootstrap: mean (standard deviation) of the same held-out loss for data "
             "simulated from the fitted Gaussian model}\\label{tab:bssr1}\n\\footnotesize\\setlength{\\tabcolsep}{"
             + ("2" if with_se else "3") + "pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}lcccccccc@{}}\n\\toprule\n"
-            "fusion & set & genuine & corr. & FAR & model & held-out & range & bootstrap\\\\\n\\midrule\n"
+            "fusion & set & genuine & corr. & FAR & model & held-out & 2.5--97.5\\% & bootstrap\\\\\n\\midrule\n"
             + "\n".join(rows[:-1]) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 

@@ -1,21 +1,21 @@
 \begin{table}[t]
-\caption{BSSR1 fusion; losses in percentage points. Correlations are those of the transformed genuine/impostor scores (largest absolute value for four matchers). Model: error-bounded $\PL(\alpha)$ of the Gaussian model fitted to all subjects (half-widths below $10^{-8}$), with its half-sampling standard error over subjects in parentheses. Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\% and 97.5\% quantiles. Bootstrap: mean (standard deviation) of the same held-out loss for data simulated from the fitted Gaussian model}\label{tab:bssr1}
+\caption{BSSR1 fusion; losses in percentage points. Correlations are those of the transformed genuine/impostor scores (largest absolute value for four matchers). Model: error-bounded $\PL(\alpha)$ of the Gaussian model fitted to all subjects (half-widths below $10^{-8}$), with its half-sampling standard error over subjects in parentheses. Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\% and 97.5\% quantiles (a positive mean with both quantiles 0.00 means that most splits give a loss of exactly zero). Bootstrap: mean (standard deviation) of the same held-out loss for data simulated from the fitted Gaussian model}\label{tab:bssr1}
 \footnotesize\setlength{\tabcolsep}{2pt}
 \begin{tabular*}{\textwidth}{@{\extracolsep\fill}lcccccccc@{}}
 \toprule
-fusion & set & genuine & corr. & FAR & model & held-out & range & bootstrap\\
+fusion & set & genuine & corr. & FAR & model & held-out & 2.5--97.5\% & bootstrap\\
 \midrule
-face C $+$ G & 2 & 5988 & $0.70/0.29$ & 0.001 & $0.50$ $(0.07)$ & $-0.94$ & $[-1.23, -0.70]$ & $0.52$ $(0.17)$\\
- & & &  & 0.01 & $0.19$ $(0.03)$ & $-0.88$ & $[-1.34, -0.58]$ & $0.20$ $(0.13)$\\
+face C $+$ G & 2 & 5988 & $0.70/0.29$ & 0.001 & $0.495$ $(0.070)$ & $-0.94$ & $[-1.23, -0.70]$ & $0.52$ $(0.17)$\\
+ & & &  & 0.01 & $0.187$ $(0.034)$ & $-0.88$ & $[-1.34, -0.58]$ & $0.20$ $(0.13)$\\
 \midrule
-finger LI $+$ RI & 3 & 6000 & $0.45/0.16$ & 0.001 & $0.06$ $(0.00)$ & $-0.22$ & $[-0.46, -0.04]$ & $0.07$ $(0.09)$\\
- & & &  & 0.01 & $0.04$ $(0.00)$ & $-0.29$ & $[-0.49, -0.11]$ & $0.03$ $(0.06)$\\
+finger LI $+$ RI & 3 & 6000 & $0.45/0.16$ & 0.001 & $0.063$ $(0.004)$ & $-0.22$ & $[-0.46, -0.04]$ & $0.07$ $(0.09)$\\
+ & & &  & 0.01 & $0.038$ $(0.003)$ & $-0.29$ & $[-0.49, -0.11]$ & $0.03$ $(0.06)$\\
 \midrule
-face C $+$ finger LI & 1 & 516 & $-0.11/0.04$ & 0.001 & $0.00$ $(0.00)$ & $0.03$ & $[0.00, 0.39]$ & $0.02$ $(0.09)$\\
- & & &  & 0.01 & $0.00$ $(0.00)$ & $0.01$ & $[0.00, 0.00]$ & $0.01$ $(0.05)$\\
+face C $+$ finger LI & 1 & 516 & $-0.11/0.04$ & 0.001 & $0.002$ $(0.001)$ & $0.03$ & $[0.00, 0.39]$ & $0.02$ $(0.09)$\\
+ & & &  & 0.01 & $0.000$ $(0.000)$ & $0.01$ & $[0.00, 0.00]$ & $0.01$ $(0.05)$\\
 \midrule
-all four & 1 & 516 & $0.69/0.28$ & 0.001 & $0.01$ $(0.00)$ & $-0.62$ & $[-1.16, 0.00]$ & $0.00$ $(0.00)$\\
- & & &  & 0.01 & $0.00$ $(0.00)$ & $-0.13$ & $[-0.39, 0.00]$ & $0.02$ $(0.08)$\\
+all four & 1 & 516 & $0.70/0.28$ & 0.001 & $0.009$ $(0.004)$ & $-0.62$ & $[-1.16, 0.00]$ & $0.00$ $(0.00)$\\
+ & & &  & 0.01 & $0.002$ $(0.001)$ & $-0.13$ & $[-0.39, 0.00]$ & $0.02$ $(0.08)$\\
 \botrule
 \end{tabular*}
 \end{table}
