@@ -9,8 +9,8 @@ Repository: https://github.com/syamsuddinexcellent/plbound (MIT licence)
 This single file is both
 
 * the Python module (``import plbound as pc``): generalized chi-square laws, error-bounded
-  inversion of their distribution functions (Theorem 5), propagation of the bounds through the
-  quantile (Proposition 6), enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha), and the
+  inversion of their distribution functions (Theorem 6), propagation of the bounds through the
+  quantile (Proposition 7), enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha), and the
   delta-method and bootstrap inference of Section 6; and
 * the script that reproduces every number, table and figure of the paper in one run:
 
@@ -227,7 +227,7 @@ class GenChi2:
         return math.exp(self._log_c_phi() - expo * math.log(tau_n)) / (1.0 - 2.0 ** (-expo))
 
     def trunc_bound_modulus(self, a):
-        """Bound on (1/pi) int_a^inf |phi(t)|/t dt  (Theorem 5(ii), modulus bound): the first
+        """Bound on (1/pi) int_a^inf |phi(t)|/t dt  (Theorem 6(ii), modulus bound): the first
         N_BLOCKS dyadic terms exactly, the rest by |phi(t)| <= C_phi t^(-r/2)."""
         ai = self._dyadic(a)
         rem = self._remainder(a * 2.0 ** N_BLOCKS, 0.0)
@@ -256,7 +256,7 @@ class GenChi2:
 # Gaussian quadratic expressions
 # ---------------------------------------------------------------------------------------------
 def represent(A, a, b, mu, Sigma, rel_tol=1e-13):
-    """Distribution of Q = X'AX + a'X + b for X ~ N(mu, Sigma) as a GenChi2 (Lemma 4)."""
+    """Distribution of Q = X'AX + a'X + b for X ~ N(mu, Sigma) as a GenChi2 (Lemma 5)."""
     A = np.asarray(A, float)
     a = np.asarray(a, float)
     mu = np.asarray(mu, float)
@@ -331,7 +331,7 @@ def difference_distribution(model: GaussianModel, m):
 
 
 # ---------------------------------------------------------------------------------------------
-# Error-bounded CDF evaluation (Theorem 5)
+# Error-bounded CDF evaluation (Theorem 6)
 # ---------------------------------------------------------------------------------------------
 class ErrorBoundedCDF:
     """Midpoint-rule Gil-Pelaez inversion of a GenChi2 law with a-priori error bounds.
@@ -523,7 +523,7 @@ def saddlepoint_quantile(g: GenChi2, p):
 
 
 # ---------------------------------------------------------------------------------------------
-# Error-bounded quantiles, TPRs, PL(alpha) and AUC (Proposition 6)
+# Error-bounded quantiles, TPRs, PL(alpha) and AUC (Proposition 7)
 # ---------------------------------------------------------------------------------------------
 @dataclass
 class Enclosure:
@@ -823,7 +823,7 @@ def pl_gradient(model: GaussianModel, alpha, eps=1e-8, rel_step=2e-3):
 def pl_hessian(model: GaussianModel, alpha, eps=1e-10, rel_step=0.05):
     """Hessian of PL(alpha) with respect to theta by central second differences (2q^2 evaluations),
     with steps scaled as in pl_gradient. Used at a zero of the loss, where it gives the 1/n bias
-    tr(H V)/2 of the plug-in estimate (Proposition 7(b))."""
+    tr(H V)/2 of the plug-in estimate (Proposition 8(b))."""
     theta, p = model_parameters(model), model.p
     i, j = np.tril_indices(p)
     sd0, sd1 = np.sqrt(np.diag(model.S0)), np.sqrt(np.diag(model.S1))
@@ -1335,11 +1335,11 @@ for (i in seq_len(nrow(cases))) {
 }
 write.csv(do.call(rbind, rows), args[2], row.names = FALSE)
 """,
-"benchmark_pl_davies.R": r"""# PL(alpha) from Davies's (1980) algorithm combined with the propagation of Proposition 6, for
+"benchmark_pl_davies.R": r"""# PL(alpha) from Davies's (1980) algorithm combined with the propagation of Proposition 7, for
 # the benchmark of Section 5.3 (run by plbound.py).  Usage: Rscript benchmark_pl_davies.R laws.csv out.csv [curve]
 #
 # Each distribution function is evaluated by CompQuadForm::davies with error at most acc; the
-# threshold is bracketed as in Proposition 6(a) and the true positive rate enclosed as in 6(b).
+# threshold is bracketed as in Proposition 7(a) and the true positive rate enclosed as in 6(b).
 # Normal laws (no quadratic part) use pnorm.
 suppressPackageStartupMessages(library(CompQuadForm))
 
@@ -1364,7 +1364,7 @@ make_cdf <- function(L, acc) {
 
 tpr_enclosure <- function(L0, L1, alpha, acc) {
   c0 <- make_cdf(L0, acc); c1 <- make_cdf(L1, acc)
-  # Proposition 6(a) needs F_0(t_hi) - e_0 > 1 - alpha, impossible when the error bound reaches alpha
+  # Proposition 7(a) needs F_0(t_hi) - e_0 > 1 - alpha, impossible when the error bound reaches alpha
   if (1 - alpha + c0$e >= 1) stop("acc >= alpha: the threshold cannot be bracketed")
   m <- L0$mean; s <- L0$sd
   t_star <- uniroot(function(t) c0$F(t) - (1 - alpha), c(m - 2 * s, m + 2 * s), extendInt = "upX",
@@ -1372,13 +1372,13 @@ tpr_enclosure <- function(L0, L1, alpha, acc) {
   eta <- 1e-4 * s
   dens <- max((c0$F(t_star + eta) - c0$F(t_star - eta)) / (2 * eta), 1e-300)
   d <- max(2 * c0$e / dens, 1e-14 * (1 + abs(t_star)))
-  for (k in 0:200) {   # Proposition 6(a)
+  for (k in 0:200) {   # Proposition 7(a)
     lo <- t_star - d; hi <- t_star + d
     if (c0$F(lo) + c0$e < 1 - alpha && c0$F(hi) - c0$e > 1 - alpha) break
     if (k == 200) stop("bracketing failed")
     d <- 2 * d
   }
-  c(1 - c1$F(hi) - c1$e, 1 - c1$F(lo) + c1$e)   # Proposition 6(b)
+  c(1 - c1$F(hi) - c1$e, 1 - c1$F(lo) + c1$e)   # Proposition 7(b)
 }
 
 timed <- function(expr_fn, min_time = 0.2) {
@@ -1558,7 +1558,7 @@ def bench_law_rows(name, a, dist):
 
 
 def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
-    """PL(alpha) by Davies's algorithm combined with Proposition 6 (benchmark_pl_davies.R), and
+    """PL(alpha) by Davies's algorithm combined with Proposition 7 (benchmark_pl_davies.R), and
     the error-bounded PL at strict operating points."""
     rows, laws = [], []
     for name, m in bench_pl_models().items():
@@ -1575,13 +1575,13 @@ def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
                     str(OUT / "bench_pl_davies_R.csv")], check=True)
     r = pd.read_csv(OUT / "bench_pl_davies_R.csv")
     for _, x in r.iterrows():
-        rows.append(dict(model=x.model, alpha=x.alpha, method="Davies + Prop. 6", setting=f"acc={x.acc:g}",
+        rows.append(dict(model=x.model, alpha=x.alpha, method="Davies + Prop. 7", setting=f"acc={x.acc:g}",
                          PL=0.5 * (x.PL_lo + x.PL_hi), precision=0.5 * (x.PL_hi - x.PL_lo),
                          seconds=x.seconds, calls=x.calls, error=x.error))
     df = pd.DataFrame(rows)
     df.to_csv(OUT / "bench_pl_davies.csv", index=False)
     print(df.to_string(), flush=True)
-    # whole loss curves: one FFT per law (pl_curve) versus per-point Davies + Proposition 6
+    # whole loss curves: one FFT per law (pl_curve) versus per-point Davies + Proposition 7
     grid = np.geomspace(1e-4, 0.5, 60)
     crow, claws = [], []
     for name, m in bench_pl_models().items():
@@ -1596,7 +1596,7 @@ def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
                     str(OUT / "bench_curve_davies_R.csv"), "curve"], check=True)
     r = pd.read_csv(OUT / "bench_curve_davies_R.csv")
     for _, x in r.iterrows():
-        crow.append(dict(model=x.model, method="Davies + Prop. 6, acc=1e-6", n_alpha=x.n_alpha,
+        crow.append(dict(model=x.model, method="Davies + Prop. 7, acc=1e-6", n_alpha=x.n_alpha,
                          seconds=x.seconds, max_half_width=x.max_half_width))
     cdf = pd.DataFrame(crow)
     cdf.to_csv(OUT / "bench_curve.csv", index=False)
@@ -1628,7 +1628,7 @@ def refresh_bivariate_reference():
 
 
 def run_benchmark():
-    """Section 5.3: distribution functions, the loss, Davies + Proposition 6, strict operating points."""
+    """Section 5.3: distribution functions, the loss, Davies + Proposition 7, strict operating points."""
     if shutil.which("Rscript") is None:
         print("Rscript not found: the benchmark needs R with the package CompQuadForm; skipped", flush=True)
         return
@@ -1671,7 +1671,7 @@ def inference_job(args):
 
 
 def boundary_job(args):
-    """Plug-in estimate only, from the same random numbers as inference_job (Proposition 7(b) check)."""
+    """Plug-in estimate only, from the same random numbers as inference_job (Proposition 8(b) check)."""
     name, n, rep = args
     r0, r1 = INF_DESIGNS[name]
     m = GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1))
@@ -1736,7 +1736,7 @@ def run_inference(workers=6):
     df.to_csv(OUT / "inference_sim.csv", index=False)
     ckpt.unlink()
     summ = inference_summary(df)
-    # Proposition 7(b): where the loss vanishes, the plug-in bias is approximately tr(H V)/2; checked
+    # Proposition 8(b): where the loss vanishes, the plug-in bias is approximately tr(H V)/2; checked
     # against the mean of INF_BOUNDARY_REPS plug-in estimates (the first INF_REPS are those of df)
     for c in ("bias_theory", "hessian_rank", "bias_large", "bias_large_mcse"):
         summ[c] = np.nan
@@ -2448,7 +2448,7 @@ def _pow10(v):
 def table_bench_pl():
     b = pd.read_csv(OUT / "bench_pl.csv")
     dv = pd.read_csv(OUT / "bench_pl_davies.csv")
-    dv = dv[(dv.method == "Davies + Prop. 6") & (dv.alpha == 0.05)]
+    dv = dv[(dv.method == "Davies + Prop. 7") & (dv.alpha == 0.05)]
     rows = []
     for model, d in b.groupby("model", sort=False):
         for _, r in d.iterrows():
@@ -2459,7 +2459,7 @@ def table_bench_pl():
                 if r.setting == "eps=1e-10":
                     for _, x in dv[dv.model == model].iterrows():
                         acc = _pow10(float(x.setting.split("=")[1]))
-                        rows.append(f"{model} & Davies + Prop.~6, acc $={acc}$ & {x.PL:.6f} & ${sci(x.precision)}$ & "
+                        rows.append(f"{model} & Davies + Prop.~7, acc $={acc}$ & {x.PL:.6f} & ${sci(x.precision)}$ & "
                                     f"{_secs(x.seconds)} & --- & --- \\\\")
             else:
                 n = int(float(r.setting.split("=")[1]))
@@ -2483,7 +2483,7 @@ def table_bench_pl():
 def table_bench_strict():
     d = pd.read_csv(OUT / "bench_pl_davies.csv")
     eb = d[d.method == "error-bounded"].set_index(["model", "alpha"])
-    dv = d[(d.method == "Davies + Prop. 6")].copy()
+    dv = d[(d.method == "Davies + Prop. 7")].copy()
     dv["acc"] = dv.setting.str.split("=").str[1].astype(float)
     rows = []
     for model in dict.fromkeys(d.model):
@@ -2562,7 +2562,7 @@ def table_bench_compact():
                 e = b[(b.model == model) & (b.setting == "eps=1e-10")].iloc[0]
             else:
                 e = d[(d.model == model) & (d.alpha == a) & (d.method == "error-bounded")].iloc[0]
-            x = d[(d.model == model) & (d.alpha == a) & (d.method == "Davies + Prop. 6") & (d.setting == "acc=1e-10")]
+            x = d[(d.model == model) & (d.alpha == a) & (d.method == "Davies + Prop. 7") & (d.setting == "acc=1e-10")]
             dv = (f"${sci(x.precision.iloc[0])}$ & {_secs(x.seconds.iloc[0])}"
                   if len(x) and np.isfinite(x.precision.iloc[0]) else "failed & ---")
             alab = "0.05" if a == 0.05 else f"${_pow10(a)}$"

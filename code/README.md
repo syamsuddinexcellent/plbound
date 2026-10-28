@@ -65,9 +65,9 @@ print(out["dAUC"])        # AUC_f - AUC_nb, also error-bounded
 
 | function | returns |
 |---|---|
-| `represent(A, a, b, mu, Sigma)` | generalized chi-square law of x'Ax + a'x + b, X ~ N(mu, Sigma) (Lemma 4) |
-| `ErrorBoundedCDF(g, window, eps)` | callable returning (F_hat(x), bound) with \|F(x) - F_hat(x)\| <= bound (Theorem 5) |
-| `error_bounded_quantile`, `error_bounded_tpr`, `error_bounded_auc` | enclosures with guaranteed error bounds (Proposition 6) |
+| `represent(A, a, b, mu, Sigma)` | generalized chi-square law of x'Ax + a'x + b, X ~ N(mu, Sigma) (Lemma 5) |
+| `ErrorBoundedCDF(g, window, eps)` | callable returning (F_hat(x), bound) with \|F(x) - F_hat(x)\| <= bound (Theorem 6) |
+| `error_bounded_quantile`, `error_bounded_tpr`, `error_bounded_auc` | enclosures with guaranteed error bounds (Proposition 7) |
 | `performance_loss(model, alpha, eps)` | enclosures of TPR_f, TPR_nb, PL(alpha), AUC_f, AUC_nb (Algorithm 1) |
 | `pl_curve(model, alphas)` | error-bounded loss curves via one FFT per law |
 | `homoscedastic_pl`, `homoscedastic_max_pl`, `kantorovich_bound` | closed forms of Proposition 2 |
