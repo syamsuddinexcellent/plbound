@@ -1,0 +1,25 @@
+\begin{table}[t]
+\caption{Explicit cumulant approximations of $\PL(\alpha)$ in the bivariate design against the error-bounded values (half-widths below $10^{-9}$). Normal: two moments; Cornish--Fisher: Cornish--Fisher quantile of the class-0 score and Edgeworth tail of the class-1 score from four cumulants. The summary covers all configurations with a positive loss at $\alpha\in\{0.05,0.01\}$}\label{tab:explicit}
+\small
+\begin{tabular*}{\textwidth}{@{\extracolsep\fill}lcccc@{}}
+\toprule
+configuration & $\alpha$ & error-bounded & normal & Cornish--Fisher\\
+\midrule
+(N,P) & 0.05 & $0.2924$ & $-0.7047$ & $-0.7046$\\
+(N,P) & 0.01 & $0.5035$ & $-0.0372$ & $+0.0207$\\
+(L,H) & 0.05 & $0.0243$ & $-0.5557$ & $+0.0186$\\
+(L,H) & 0.01 & $0.0062$ & $-0.3342$ & $-0.0390$\\
+(P,N) & 0.05 & $0.0617$ & $-0.0467$ & $-0.0161$\\
+(P,N) & 0.01 & $0.0888$ & $-0.0096$ & $+0.0176$\\
+(L,M) & 0.05 & $0.0085$ & $-0.1173$ & $+0.0078$\\
+(L,M) & 0.01 & $0.0045$ & $-0.2250$ & $+0.0029$\\
+(H,H) & 0.05 & $0.0256$ & $+0.0256$ & $+0.0256$\\
+(H,H) & 0.01 & $0.0665$ & $+0.0665$ & $+0.0665$\\
+\midrule
+\multicolumn{3}{l}{median absolute error (48 cases)} & 0.0961 & 0.0020\\
+\multicolumn{3}{l}{largest absolute error (48 cases)} & 1.0000 & 0.9971\\
+\multicolumn{3}{l}{negative values (48 cases)} & 27 & 10\\
+\multicolumn{3}{l}{relative error below 10\% (48 cases)} & 11 & 18\\
+\botrule
+\end{tabular*}
+\end{table}

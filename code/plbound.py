@@ -28,7 +28,7 @@ BSSR1 scores: pass the downloaded bssr1.zip once with --bssr1 (see data/README.m
 requirements are missing are skipped with a message.
 
 Options
-  --only STEPS   comma-separated subset of: tests, bivariate, highdim, benchmark, inference,
+  --only STEPS   comma-separated subset of: tests, bivariate, explicit, highdim, benchmark, inference,
                  bssr1, figures, tables (default: all, in this order)
   --out DIR      folder for the results (default: ../results)
   --data DIR     folder for the prepared BSSR1 files (default: ../data)
@@ -1162,6 +1162,101 @@ def run_bivariate():
     bivariate_pl_curves()
     bivariate_monte_carlo(tab)
     bivariate_independent_check()
+
+
+# =============================================================================================
+# Part 5b. Explicit formulas: cumulant approximations and proportional covariance matrices
+# (Online Resource 1, Sections S5 and S6)
+# =============================================================================================
+def genchi2_cumulants(g: GenChi2, rmax=4):
+    """Cumulants kappa_1..kappa_rmax of Q = kappa0 + sum_j (lam_j W_j^2 + eta_j W_j) + sigma0 G."""
+    out = []
+    for r in range(1, rmax + 1):
+        v = float(np.sum(2.0 ** (r - 1) * math.factorial(r - 1) * g.lam ** r))
+        if r >= 2:
+            v += float(np.sum(math.factorial(r) * g.eta ** 2 / 2 * (2 * g.lam) ** (r - 2)))
+        v += g.kappa0 if r == 1 else 0.0
+        v += g.sigma0 ** 2 if r == 2 else 0.0
+        out.append(v)
+    return out
+
+
+def explicit_tpr(g0: GenChi2, g1: GenChi2, alpha, method):
+    """Explicit approximation of TPR(alpha) = P_1{Q > F_0^{-1}(1 - alpha)} from cumulants: 'normal'
+    (two moments) or 'cf' (Cornish-Fisher quantile in class 0, Edgeworth tail in class 1, four
+    cumulants; Konishi, Niki and Gupta 1988)."""
+    k0, k1 = genchi2_cumulants(g0), genchi2_cumulants(g1)
+    z = float(special.ndtri(1 - alpha))
+    s0, s1 = math.sqrt(k0[1]), math.sqrt(k1[1])
+    if method == "normal":
+        return float(special.ndtr(-(k0[0] + s0 * z - k1[0]) / s1))
+    a3, a4 = k0[2] / s0 ** 3, k0[3] / s0 ** 4
+    t = k0[0] + s0 * (z + (z ** 2 - 1) * a3 / 6 + (z ** 3 - 3 * z) * a4 / 24 - (2 * z ** 3 - 5 * z) * a3 ** 2 / 36)
+    u, b3, b4 = (t - k1[0]) / s1, k1[2] / s1 ** 3, k1[3] / s1 ** 4
+    cdf = special.ndtr(u) - stats.norm.pdf(u) * (b3 / 6 * (u ** 2 - 1) + b4 / 24 * (u ** 3 - 3 * u)
+                                                 + b3 ** 2 / 72 * (u ** 5 - 10 * u ** 3 + 15 * u))
+    return float(1 - cdf)
+
+
+def explicit_cumulant_check():
+    """Section S5: explicit cumulant approximations of PL(alpha) against the error-bounded values of
+    the bivariate design (results/explicit_approx.csv)."""
+    tab = pd.read_csv(OUT / "bivariate_table.csv")
+    rows = []
+    for _, r in tab.iterrows():
+        m = GaussianModel(MU0, MU1, biv_cov(BIV_LEVELS[r.rho0]), biv_cov(BIV_LEVELS[r.rho1]))
+        d = score_distributions(m)
+        row = dict(rho0=r.rho0, rho1=r.rho1, alpha=r.alpha, PL=r.PL, PL_hw=r.PL_hw)
+        for method in ("normal", "cf"):
+            row[f"PL_{method}"] = (explicit_tpr(d[("f", 0)], d[("f", 1)], r.alpha, method)
+                                   - explicit_tpr(d[("nb", 0)], d[("nb", 1)], r.alpha, method))
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    df.to_csv(OUT / "explicit_approx.csv", index=False)
+    return df
+
+
+def proportional_tpr_full(mu0, mu1, S0, k, alpha):
+    """Corollary S1: TPR of the full rule when Sigma_1 = k Sigma_0, k != 1, from noncentral chi-square
+    distribution functions with p degrees of freedom and noncentralities D2/(k-1)^2 and k D2/(k-1)^2."""
+    p, d = len(mu0), np.asarray(mu1, float) - np.asarray(mu0, float)
+    D2 = float(d @ np.linalg.solve(S0, d))
+    l0, l1 = D2 / (k - 1) ** 2, k * D2 / (k - 1) ** 2
+    F = lambda q, lam: stats.ncx2.cdf(q, p, lam) if lam > 0 else stats.chi2.cdf(q, p)
+    Finv = lambda u, lam: stats.ncx2.ppf(u, p, lam) if lam > 0 else stats.chi2.ppf(u, p)
+    if k > 1:
+        return float(1 - F(Finv(1 - alpha, l0) / k, l1))
+    return float(F(Finv(alpha, l0) / k, l1))
+
+
+PROPORTIONAL_CASES = [(0.5, (1.0, 2.0), 2.0), (0.5, (1.0, 2.0), 0.5), (-0.8, (1.0, 1.0), 3.0), (0.3, (2.0, 0.5), 1.5)]
+
+
+def proportional_check(eps=1e-11):
+    """Section S6: the explicit true positive rate of Corollary S1 against error-bounded enclosures
+    (results/proportional.csv)."""
+    rows = []
+    for rho, var, k in PROPORTIONAL_CASES:
+        s = np.sqrt(var)
+        S0 = np.array([[var[0], rho * s[0] * s[1]], [rho * s[0] * s[1], var[1]]])
+        for label, (m0, m1) in (("different", (MU0, MU1)), ("equal", (MU0, MU0))):
+            m = GaussianModel(m0, m1, S0, k * S0)
+            for a in (0.05, 0.01, 1e-4):
+                out = performance_loss(m, a, eps, with_auc=False)
+                ex = proportional_tpr_full(m0, m1, S0, k, a)
+                enc = out["TPR_f"]
+                rows.append(dict(rho=rho, var1=var[0], var2=var[1], k=k, means=label, alpha=a, TPR_f_explicit=ex,
+                                 TPR_f_lo=enc.lo, TPR_f_hi=enc.hi, inside=bool(enc.lo <= ex <= enc.hi),
+                                 PL=out["PL"].mid, PL_hw=out["PL"].half_width))
+    df = pd.DataFrame(rows)
+    df.to_csv(OUT / "proportional.csv", index=False)
+    return df
+
+
+def run_explicit():
+    """Online Resource 1, Sections S5 and S6 (needs results/bivariate_table.csv)."""
+    explicit_cumulant_check()
+    proportional_check()
 
 
 # =============================================================================================
@@ -2604,13 +2699,60 @@ def table_inference():
             + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
+def table_explicit_approx():
+    d = pd.read_csv(OUT / "explicit_approx.csv")
+    pos = d[d.PL > 1e-6]
+    rows = []
+    for (r0, r1) in (("N", "P"), ("L", "H"), ("P", "N"), ("L", "M"), ("H", "H")):
+        for a in (0.05, 0.01):
+            r = d[(d.rho0 == r0) & (d.rho1 == r1) & (d.alpha == a)].iloc[0]
+            rows.append(f"({r0},{r1}) & {a:g} & ${r.PL:.4f}$ & ${r.PL_normal:+.4f}$ & ${r.PL_cf:+.4f}$\\\\")
+    rows.append("\\midrule")
+    summ = []
+    for name, fn in (("median absolute error", lambda e, x: f"{e.median():.4f}"),
+                     ("largest absolute error", lambda e, x: f"{e.max():.4f}"),
+                     ("negative values", lambda e, x: f"{int((x < 0).sum())}"),
+                     ("relative error below 10\\%", lambda e, x: f"{int(((e / pos.PL) < 0.1).sum())}")):
+        vals = [fn((pos[c] - pos.PL).abs(), pos[c]) for c in ("PL_normal", "PL_cf")]
+        summ.append(f"\\multicolumn{{3}}{{l}}{{{name} ({len(pos)} cases)}} & {vals[0]} & {vals[1]}\\\\")
+    return ("\\begin{table}[t]\n\\caption{Explicit cumulant approximations of $\\PL(\\alpha)$ in the bivariate design "
+            "against the error-bounded values (half-widths below $10^{-9}$). Normal: two moments; Cornish--Fisher: "
+            "Cornish--Fisher quantile of the class-0 score and Edgeworth tail of the class-1 score from four cumulants. "
+            "The summary covers all configurations with a positive loss at $\\alpha\\in\\{0.05,0.01\\}$}"
+            "\\label{tab:explicit}\n\\small\n\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}lcccc@{}}\n\\toprule\n"
+            "configuration & $\\alpha$ & error-bounded & normal & Cornish--Fisher\\\\\n\\midrule\n"
+            + "\n".join(rows + summ) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
+def table_proportional():
+    d = pd.read_csv(OUT / "proportional.csv")
+    rows, prev = [], None
+    for _, r in d.iterrows():
+        key = (r.rho, r.var1, r.var2, r.k, r.means)
+        lead = (f"${r.rho:g}$ & $({r.var1:g},{r.var2:g})$ & ${r.k:g}$ & {r.means}" if key != prev else " & & &")
+        prev = key
+        hw = (r.TPR_f_hi - r.TPR_f_lo) / 2
+        loss = f"{r.PL:.6f}" if r.PL - r.PL_hw > 0 else f"\\le{sci_up(r.PL + r.PL_hw, 0)}"
+        rows.append(f"{lead} & {r.alpha:g} & ${r.TPR_f_explicit:.10f}$ & ${sci(hw, 1)}$ & ${loss}$\\\\")
+    return ("\\begin{table}[t]\n\\caption{Proportional covariance matrices $\\bm\\Sigma_1=k\\bm\\Sigma_0$ with correlation "
+            "$\\rho$ and class-0 variances as shown: the true positive rate of the full rule from Corollary~S1 "
+            "against the half-width of its error-bounded enclosure; all " + str(int(d.inside.sum())) + " of "
+            + str(len(d)) + " explicit values lie inside their enclosures. The last column is the error-bounded "
+            "loss, which is positive by Theorem~4 because $\\rho\\ne0$; where it is below the resolution of its enclosure, "
+            "the upper end of the enclosure is shown}\\label{tab:proportional}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+            "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}cccccccc@{}}\n\\toprule\n"
+            "$\\rho$ & variances & $k$ & means & $\\alpha$ & $\\TPR_f$ (Corollary S1) & half-width & $\\PL(\\alpha)$\\\\\n\\midrule\n"
+            + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
 def latex_tables():
-    """LaTeX source of Tables 1 to 5 of the paper and S1 to S3 of Online Resource 1, built from the
+    """LaTeX source of Tables 1 to 5 of the paper and S1 to S5 of Online Resource 1, built from the
     CSV files in OUT."""
     gens = {"table1_bivariate": table_biv, "table2_ar1": table_ar1, "table3_benchmark": table_bench_compact,
             "table4_inference": table_inference, "table5_bssr1": lambda: table_bssr1(with_se=True),
             "tableS1_benchmark_cdf": table_bench_cdf, "tableS2_benchmark_pl": table_bench_pl,
-            "tableS3_strict_operating_points": table_bench_strict}
+            "tableS3_strict_operating_points": table_bench_strict, "tableS4_explicit_approximations": table_explicit_approx,
+            "tableS5_proportional": table_proportional}
     out = {}
     for name, gen in gens.items():
         try:
@@ -2631,7 +2773,7 @@ def write_tables():
 # =============================================================================================
 # Part 11. Command line: reproduce everything in one run
 # =============================================================================================
-STEPS = ("tests", "bivariate", "highdim", "benchmark", "inference", "bssr1", "figures", "tables")
+STEPS = ("tests", "bivariate", "explicit", "highdim", "benchmark", "inference", "bssr1", "figures", "tables")
 
 
 def main(argv=None):
@@ -2662,6 +2804,8 @@ def main(argv=None):
             run_tests()
         elif step == "bivariate":
             run_bivariate()
+        elif step == "explicit":
+            run_explicit()
         elif step == "highdim":
             run_highdim(args.workers)
         elif step == "benchmark":
