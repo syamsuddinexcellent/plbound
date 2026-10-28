@@ -9,15 +9,15 @@ Repository: https://github.com/syamsuddinexcellent/plbound (MIT licence)
 This single file is both
 
 * the Python module (``import plbound as pc``): generalized chi-square laws, error-bounded
-  inversion of their distribution functions (Theorem 6), propagation of the bounds through the
-  quantile (Proposition 7), enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha), and the
+  inversion of their distribution functions (Theorem 7), propagation of the bounds through the
+  quantile (Proposition 8), enclosures of PL(alpha) = TPR_f(alpha) - TPR_nb(alpha), and the
   delta-method and bootstrap inference of Section 6; and
 * the script that reproduces every number, table and figure of the paper in one run:
 
       python plbound.py
 
-  It runs the exactness tests, the studies of Section 5, the simulation study of Section 6 and
-  the application of Section 7, and writes the CSV files to ../results, the figures to
+  It runs the exactness tests, the checks of Sections 3.4 and 3.5, the studies of Section 5, the
+  simulation study of Section 6 and the application of Section 7, and writes the CSV files to ../results, the figures to
   ../results/figures and the LaTeX tables to ../results/tables. The full run takes about three and
   a half hours on a laptop (Apple M1, seven worker processes), most of it for the simulation study of
   Section 6, which can be interrupted and resumed; Section 7 needs about 8 GB of memory.
@@ -28,8 +28,8 @@ BSSR1 scores: pass the downloaded bssr1.zip once with --bssr1 (see data/README.m
 requirements are missing are skipped with a message.
 
 Options
-  --only STEPS   comma-separated subset of: tests, bivariate, explicit, highdim, benchmark, inference,
-                 bssr1, figures, tables (default: all, in this order)
+  --only STEPS   comma-separated subset of: tests, bivariate, explicit, structure, highdim, benchmark,
+                 inference, bssr1, figures, tables (default: all, in this order)
   --out DIR      folder for the results (default: ../results)
   --data DIR     folder for the prepared BSSR1 files (default: ../data)
   --bssr1 PATH   bssr1.zip from NIST, or the folder it was extracted to; converted into --data
@@ -227,7 +227,7 @@ class GenChi2:
         return math.exp(self._log_c_phi() - expo * math.log(tau_n)) / (1.0 - 2.0 ** (-expo))
 
     def trunc_bound_modulus(self, a):
-        """Bound on (1/pi) int_a^inf |phi(t)|/t dt  (Theorem 6(ii), modulus bound): the first
+        """Bound on (1/pi) int_a^inf |phi(t)|/t dt  (Theorem 7(ii), modulus bound): the first
         N_BLOCKS dyadic terms exactly, the rest by |phi(t)| <= C_phi t^(-r/2)."""
         ai = self._dyadic(a)
         rem = self._remainder(a * 2.0 ** N_BLOCKS, 0.0)
@@ -256,7 +256,7 @@ class GenChi2:
 # Gaussian quadratic expressions
 # ---------------------------------------------------------------------------------------------
 def represent(A, a, b, mu, Sigma, rel_tol=1e-13):
-    """Distribution of Q = X'AX + a'X + b for X ~ N(mu, Sigma) as a GenChi2 (Lemma 5)."""
+    """Distribution of Q = X'AX + a'X + b for X ~ N(mu, Sigma) as a GenChi2 (Lemma 6)."""
     A = np.asarray(A, float)
     a = np.asarray(a, float)
     mu = np.asarray(mu, float)
@@ -331,7 +331,7 @@ def difference_distribution(model: GaussianModel, m):
 
 
 # ---------------------------------------------------------------------------------------------
-# Error-bounded CDF evaluation (Theorem 6)
+# Error-bounded CDF evaluation (Theorem 7)
 # ---------------------------------------------------------------------------------------------
 class ErrorBoundedCDF:
     """Midpoint-rule Gil-Pelaez inversion of a GenChi2 law with a-priori error bounds.
@@ -523,7 +523,7 @@ def saddlepoint_quantile(g: GenChi2, p):
 
 
 # ---------------------------------------------------------------------------------------------
-# Error-bounded quantiles, TPRs, PL(alpha) and AUC (Proposition 7)
+# Error-bounded quantiles, TPRs, PL(alpha) and AUC (Proposition 8)
 # ---------------------------------------------------------------------------------------------
 @dataclass
 class Enclosure:
@@ -820,10 +820,11 @@ def pl_gradient(model: GaussianModel, alpha, eps=1e-8, rel_step=2e-3):
     return grad, err
 
 
-def pl_hessian(model: GaussianModel, alpha, eps=1e-10, rel_step=0.05):
+def pl_hessian(model: GaussianModel, alpha, eps=1e-10, rel_step=0.05, idx=None):
     """Hessian of PL(alpha) with respect to theta by central second differences (2q^2 evaluations),
     with steps scaled as in pl_gradient. Used at a zero of the loss, where it gives the 1/n bias
-    tr(H V)/2 of the plug-in estimate (Proposition 8(b))."""
+    tr(H V)/2 of the plug-in estimate (Proposition 9(b)). With idx, only the block of those
+    coordinates of theta is computed."""
     theta, p = model_parameters(model), model.p
     i, j = np.tril_indices(p)
     sd0, sd1 = np.sqrt(np.diag(model.S0)), np.sqrt(np.diag(model.S1))
@@ -833,11 +834,12 @@ def pl_hessian(model: GaussianModel, alpha, eps=1e-10, rel_step=0.05):
     f = lambda x: performance_loss(model_from_parameters(theta + x, p), alpha, eps, with_auc=False)["PL"].mid
     E = np.diag(h)
     f0 = f(np.zeros(q))
-    H = np.empty((q, q))
-    for a in range(q):
-        H[a, a] = (f(E[a]) - 2 * f0 + f(-E[a])) / h[a] ** 2
-        for b in range(a):
-            H[a, b] = H[b, a] = (f(E[a] + E[b]) - f(E[a] - E[b]) - f(-E[a] + E[b]) + f(-E[a] - E[b])) / (4 * h[a] * h[b])
+    idx = list(range(q)) if idx is None else list(idx)
+    H = np.empty((len(idx), len(idx)))
+    for k, a in enumerate(idx):
+        H[k, k] = (f(E[a]) - 2 * f0 + f(-E[a])) / h[a] ** 2
+        for l, b in enumerate(idx[:k]):
+            H[k, l] = H[l, k] = (f(E[a] + E[b]) - f(E[a] - E[b]) - f(-E[a] + E[b]) + f(-E[a] - E[b])) / (4 * h[a] * h[b])
     return H
 
 
@@ -1260,6 +1262,189 @@ def run_explicit():
 
 
 # =============================================================================================
+# Part 5c. Zero loss and weak dependence: checks of Theorem 4, Proposition 5 and Corollary 2
+# (Sections 3.4 and 3.5; Online Resource 1, Section S8)
+# =============================================================================================
+ZERO_ALPHAS = (0.3, 0.05, 1e-3, 1e-5)
+J2 = np.array([[0.0, 1.0], [1.0, 0.0]])
+
+
+def corr_cov(r, d):
+    """2 x 2 covariance matrix with correlation r and variances d."""
+    s = np.sqrt(np.asarray(d, float))
+    return np.array([[d[0], r * s[0] * s[1]], [r * s[0] * s[1], d[1]]])
+
+
+def zero_loss_constant(mu0, mu1, S0, S1):
+    """The constant c of Theorem 4(iv), by least squares, and the residual of (iv)."""
+    P0, P1 = np.linalg.inv(S0), np.linalg.inv(S1)
+    E0, E1 = np.diag(1 / np.diag(S0)), np.diag(1 / np.diag(S1))
+    A, B = P0 - P1, E0 - E1
+    delta = np.asarray(mu1, float) - np.asarray(mu0, float)
+    if np.sum(B * B) > 0:
+        c = float(np.sum(A * B) / np.sum(B * B))
+    else:                                   # equal variances: c is fixed by M_c delta = 0
+        g, h = P0 @ delta, E0 @ delta
+        c = float(g @ h / (h @ h))
+    M = P0 - c * E0
+    return c, float(max(np.abs(A - c * B).max(), np.abs(M @ delta).max()))
+
+
+def costless_p3(seed=5):
+    """Random p = 3 pair (Sigma_0, Sigma_1) with equal means that satisfies Theorem 4(iv): Sigma_1^-1 is
+    Sigma_0^-1 minus a diagonal matrix, solved for numerically."""
+    rng = np.random.default_rng(seed)
+    G = rng.normal(size=(3, 3))
+    P0 = G @ G.T + 2 * np.eye(3)
+
+    def F(x):
+        lam, c = x[:3], x[3]
+        P1 = P0 - np.diag(lam)
+        if np.any(np.linalg.eigvalsh(P1) <= 1e-8):
+            return np.full(4, 10.0)
+        D0, D1 = np.diag(np.linalg.inv(P0)), np.diag(np.linalg.inv(P1))
+        return np.r_[lam - c * (1 / D0 - 1 / D1), lam[0] - 0.8]
+
+    x = optimize.fsolve(F, [0.8, 0.5, -0.5, 1.5])
+    assert np.abs(F(x)).max() < 1e-10
+    return np.linalg.inv(P0), np.linalg.inv(P0 - np.diag(x[:3]))
+
+
+def _pl_levels(mu0, mu1, S0, S1, eps):
+    m = GaussianModel(np.asarray(mu0, float), np.asarray(mu1, float), S0, S1)
+    return [performance_loss(m, a, eps, with_auc=False)["PL"] for a in ZERO_ALPHAS]
+
+
+def zero_loss_check(eps=1e-12):
+    """Theorem 4 and Corollary 1: configurations satisfying (iv) have enclosures of PL(alpha) that
+    contain zero at four levels, a perturbation of one correlation makes the loss positive, and a
+    diagonal covariance matrix in one class only gives a positive loss (results/zero_loss.csv,
+    results/one_diagonal.csv)."""
+    k = 0.6 * (1 - 0.3 ** 2) / (0.3 * (1 - 0.6 ** 2))
+    cases = [("shared", [0, 0], [1, 1], corr_cov(0.5, [1, 1]), corr_cov(0.5, [1, 1])),
+             ("equal correlations", [1, -0.5], [1, -0.5], corr_cov(-0.46, [1, 2]), corr_cov(-0.46, [2, 1])),
+             ("proportional variances", [0, 0], [0, 0], corr_cov(0.3, [1, 1]), corr_cov(0.6, [k, k]))]
+    S0, S1 = costless_p3()
+    cases.append(("random p=3", [1, -0.5, 0.3], [1, -0.5, 0.3], S0, S1))
+    rows = []
+    for name, mu0, mu1, S0, S1 in cases:
+        c, res = zero_loss_constant(mu0, mu1, S0, S1)
+        enc = _pl_levels(mu0, mu1, S0, S1, eps)
+        S1p = S1.copy()                     # correlation (1,2) of class 1 changed by 0.02
+        S1p[0, 1] = S1p[1, 0] = S1[0, 1] + 0.02 * np.sqrt(S1[0, 0] * S1[1, 1])
+        pert = _pl_levels(mu0, mu1, S0, S1p, eps)
+        rows.append(dict(case=name, k=k if name == "proportional variances" else np.nan, c=c, residual=res,
+                         contains_zero=all(e.lo <= 0 <= e.hi for e in enc),
+                         max_halfwidth=max(e.half_width for e in enc), perturbed_min_lower=min(e.lo for e in pert)))
+    pd.DataFrame(rows).to_csv(OUT / "zero_loss.csv", index=False)
+    rng, rows = np.random.default_rng(2027), []
+    for p in (2, 5):
+        for rep in range(10):
+            G = rng.normal(size=(p, p))
+            S1 = G @ G.T + 0.5 * np.eye(p)
+            S0 = np.diag(rng.uniform(0.5, 2.0, size=p))
+            enc = _pl_levels(np.zeros(p), rng.normal(size=p), S0, S1, eps)
+            rows.append(dict(p=p, rep=rep, min_lower=min(e.lo for e in enc)))
+    pd.DataFrame(rows).to_csv(OUT / "one_diagonal.csv", index=False)
+
+
+def weak_equal_var(mu0, mu1, E0, E1, alpha):
+    """Corollary 2: second-order approximation of PL(alpha) for unit variances and correlation
+    matrices I + E_y."""
+    u = np.asarray(mu1, float) - np.asarray(mu0, float)
+    D = np.linalg.norm(u)
+    e = u / D
+    P = np.eye(u.size) - np.outer(e, e)
+    z = stats.norm.ppf(1 - alpha)
+    b = P @ (z * E0 - (z - D) * E1) @ e
+    return float(stats.norm.pdf(z - D) / (2 * D) * (0.5 * np.trace((E0 - E1) @ P @ (E0 - E1) @ P) + b @ b))
+
+
+def weak_hessian_p2(mu0, mu1, alpha):
+    """Hessian of PL(alpha) in the correlations (rho_0, rho_1) at unit variances and rho_0 = rho_1 = 0,
+    p = 2 (Proposition 5 and Corollary 2)."""
+    u = np.asarray(mu1, float) - np.asarray(mu0, float)
+    D = np.linalg.norm(u)
+    e = u / D
+    z = stats.norm.ppf(1 - alpha)
+    f1 = stats.norm.pdf(z - D) / D
+    a, b = 2 * e[0] ** 2 * e[1] ** 2, (e[0] ** 2 - e[1] ** 2) ** 2
+    return f1 * np.array([[a + z ** 2 * b, -(a + z * (z - D) * b)], [-(a + z * (z - D) * b), a + (z - D) ** 2 * b]])
+
+
+WEAK_DIRECTIONS = {"(0,rho)": (0, 1), "(rho,0)": (1, 0), "(rho,rho)": (1, 1), "(rho,-rho)": (1, -1)}
+
+
+def weak_dependence_check(eps=1e-11, n_mc=8_000_000):
+    """Proposition 5 and Corollary 2 against error-bounded losses (results/weak_dependence.csv): the
+    Hessian at (N,N), the bivariate design with unit variances, three random models with p = 5, unequal
+    marginal variances (the conditional variance of Proposition 5 by Monte Carlo) and configurations
+    beyond weak dependence."""
+    exact = lambda mu0, mu1, S0, S1, a: performance_loss(GaussianModel(mu0, mu1, S0, S1), a, eps, with_auc=False)["PL"]
+    rows = []
+    Hn = pl_hessian(GaussianModel(MU0, MU1, np.eye(2), np.eye(2)), 0.05, idx=[5, 8])   # vech entries (2,1)
+    Hc = weak_hessian_p2(MU0, MU1, 0.05)
+    for (i, j), name in zip([(0, 0), (1, 1), (0, 1)], ["rho0rho0", "rho1rho1", "rho0rho1"]):
+        rows.append(dict(part="hessian", item=name, approx=Hc[i, j], exact=Hn[i, j]))
+    for alpha in (0.05, 0.01):
+        for name, (r0, r1) in WEAK_DIRECTIONS.items():
+            for rho in (0.4, 0.2, 0.1, 0.05):
+                E0, E1 = rho * r0 * J2, rho * r1 * J2
+                ex = exact(MU0, MU1, np.eye(2) + E0, np.eye(2) + E1, alpha)
+                rows.append(dict(part="bivariate", alpha=alpha, item=name, rho=rho, exact=ex.mid, hw=ex.half_width,
+                                 approx=weak_equal_var(MU0, MU1, E0, E1, alpha)))
+    rng, p = np.random.default_rng(2027), 5
+    for case in range(3):
+        mu1 = rng.normal(size=p)
+        mu1 *= 2.0 / np.linalg.norm(mu1)                # separation 2
+        Bs = []
+        for _ in range(2):
+            G = rng.normal(size=(p, p))
+            B = np.triu(G + G.T, 1)
+            B = B + B.T
+            Bs.append(B / np.abs(np.linalg.eigvalsh(B)).max())
+        for e_ in (0.4, 0.2, 0.1, 0.05):
+            E0, E1 = e_ * Bs[0], e_ * Bs[1]
+            ex = exact(np.zeros(p), mu1, np.eye(p) + E0, np.eye(p) + E1, 0.05)
+            rows.append(dict(part="p5", item=str(case + 1), rho=e_, alpha=0.05, exact=ex.mid, hw=ex.half_width,
+                             approx=weak_equal_var(np.zeros(p), mu1, E0, E1, 0.05)))
+    # unequal variances (1, 1) and (1, 2): f_{f,1}(t) Var(U | L_f = t) by Monte Carlo in a band around t
+    d0, d1, mc = np.array([1.0, 1.0]), np.array([1.0, 2.0]), np.random.default_rng(11)
+    Lf = lambda x: 0.5 * (((x - MU0) ** 2 / d0).sum(1) + np.log(d0).sum() - ((x - MU1) ** 2 / d1).sum(1) - np.log(d1).sum())
+    X0 = MU0 + mc.standard_normal((n_mc, 2)) * np.sqrt(d0)
+    X1 = MU1 + mc.standard_normal((n_mc, 2)) * np.sqrt(d1)
+    L0, L1 = Lf(X0), Lf(X1)
+    t = np.quantile(L0, 0.95)
+    h = 0.01 * L0.std()
+    band = np.abs(L0 - t) < h
+    f1 = (np.abs(L1 - t) < h).mean() / (2 * h)          # density of L_f in class 1 at t
+    u, v = (X0[band] - MU0) / np.sqrt(d0), (X0[band] - MU1) / np.sqrt(d1)
+    for name, (r0, r1) in list(WEAK_DIRECTIONS.items())[:3]:
+        coef = 0.5 * f1 * (r0 * u[:, 0] * u[:, 1] - r1 * v[:, 0] * v[:, 1]).var()
+        for rho in (0.2, 0.1, 0.05):
+            S0 = np.sqrt(np.outer(d0, d0)) * (np.eye(2) + rho * r0 * J2)
+            S1 = np.sqrt(np.outer(d1, d1)) * (np.eye(2) + rho * r1 * J2)
+            ex = exact(MU0, MU1, S0, S1, 0.05)
+            rows.append(dict(part="unequal", item=name, rho=rho, alpha=0.05, exact=ex.mid, hw=ex.half_width,
+                             approx=coef * rho ** 2, band=int(band.sum())))
+    for r0n, r1n in (("L", "L"), ("L", "H"), ("H", "H"), ("N", "P")):
+        E0, E1 = BIV_LEVELS[r0n] * J2, BIV_LEVELS[r1n] * J2
+        ex = exact(MU0, MU1, np.eye(2) + E0, np.eye(2) + E1, 0.05)
+        rows.append(dict(part="beyond", item=f"({r0n},{r1n})", alpha=0.05, exact=ex.mid, hw=ex.half_width,
+                         approx=weak_equal_var(MU0, MU1, E0, E1, 0.05)))
+    df = pd.DataFrame(rows)
+    df["ratio"] = df.approx / df.exact
+    df.to_csv(OUT / "weak_dependence.csv", index=False)
+    return df
+
+
+def run_structure():
+    """Sections 3.4 and 3.5: Theorem 4, Corollary 1, Proposition 5 and Corollary 2."""
+    zero_loss_check()
+    weak_dependence_check()
+
+
+# =============================================================================================
 # Part 6. Beyond two dimensions (Section 5.2)
 # =============================================================================================
 AR1_RHOS = (0.0, 0.3, 0.6, 0.9)
@@ -1430,11 +1615,11 @@ for (i in seq_len(nrow(cases))) {
 }
 write.csv(do.call(rbind, rows), args[2], row.names = FALSE)
 """,
-"benchmark_pl_davies.R": r"""# PL(alpha) from Davies's (1980) algorithm combined with the propagation of Proposition 7, for
+"benchmark_pl_davies.R": r"""# PL(alpha) from Davies's (1980) algorithm combined with the propagation of Proposition 8, for
 # the benchmark of Section 5.3 (run by plbound.py).  Usage: Rscript benchmark_pl_davies.R laws.csv out.csv [curve]
 #
 # Each distribution function is evaluated by CompQuadForm::davies with error at most acc; the
-# threshold is bracketed as in Proposition 7(a) and the true positive rate enclosed as in 6(b).
+# threshold is bracketed as in Proposition 8(a) and the true positive rate enclosed as in 8(b).
 # Normal laws (no quadratic part) use pnorm.
 suppressPackageStartupMessages(library(CompQuadForm))
 
@@ -1459,7 +1644,7 @@ make_cdf <- function(L, acc) {
 
 tpr_enclosure <- function(L0, L1, alpha, acc) {
   c0 <- make_cdf(L0, acc); c1 <- make_cdf(L1, acc)
-  # Proposition 7(a) needs F_0(t_hi) - e_0 > 1 - alpha, impossible when the error bound reaches alpha
+  # Proposition 8(a) needs F_0(t_hi) - e_0 > 1 - alpha, impossible when the error bound reaches alpha
   if (1 - alpha + c0$e >= 1) stop("acc >= alpha: the threshold cannot be bracketed")
   m <- L0$mean; s <- L0$sd
   t_star <- uniroot(function(t) c0$F(t) - (1 - alpha), c(m - 2 * s, m + 2 * s), extendInt = "upX",
@@ -1467,13 +1652,13 @@ tpr_enclosure <- function(L0, L1, alpha, acc) {
   eta <- 1e-4 * s
   dens <- max((c0$F(t_star + eta) - c0$F(t_star - eta)) / (2 * eta), 1e-300)
   d <- max(2 * c0$e / dens, 1e-14 * (1 + abs(t_star)))
-  for (k in 0:200) {   # Proposition 7(a)
+  for (k in 0:200) {   # Proposition 8(a)
     lo <- t_star - d; hi <- t_star + d
     if (c0$F(lo) + c0$e < 1 - alpha && c0$F(hi) - c0$e > 1 - alpha) break
     if (k == 200) stop("bracketing failed")
     d <- 2 * d
   }
-  c(1 - c1$F(hi) - c1$e, 1 - c1$F(lo) + c1$e)   # Proposition 7(b)
+  c(1 - c1$F(hi) - c1$e, 1 - c1$F(lo) + c1$e)   # Proposition 8(b)
 }
 
 timed <- function(expr_fn, min_time = 0.2) {
@@ -1653,7 +1838,7 @@ def bench_law_rows(name, a, dist):
 
 
 def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
-    """PL(alpha) by Davies's algorithm combined with Proposition 7 (benchmark_pl_davies.R), and
+    """PL(alpha) by Davies's algorithm combined with Proposition 8 (benchmark_pl_davies.R), and
     the error-bounded PL at strict operating points."""
     rows, laws = [], []
     for name, m in bench_pl_models().items():
@@ -1670,13 +1855,13 @@ def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
                     str(OUT / "bench_pl_davies_R.csv")], check=True)
     r = pd.read_csv(OUT / "bench_pl_davies_R.csv")
     for _, x in r.iterrows():
-        rows.append(dict(model=x.model, alpha=x.alpha, method="Davies + Prop. 7", setting=f"acc={x.acc:g}",
+        rows.append(dict(model=x.model, alpha=x.alpha, method="Davies + propagation", setting=f"acc={x.acc:g}",
                          PL=0.5 * (x.PL_lo + x.PL_hi), precision=0.5 * (x.PL_hi - x.PL_lo),
                          seconds=x.seconds, calls=x.calls, error=x.error))
     df = pd.DataFrame(rows)
     df.to_csv(OUT / "bench_pl_davies.csv", index=False)
     print(df.to_string(), flush=True)
-    # whole loss curves: one FFT per law (pl_curve) versus per-point Davies + Proposition 7
+    # whole loss curves: one FFT per law (pl_curve) versus per-point Davies + Proposition 8
     grid = np.geomspace(1e-4, 0.5, 60)
     crow, claws = [], []
     for name, m in bench_pl_models().items():
@@ -1691,7 +1876,7 @@ def benchmark_davies(alphas=(0.05, 1e-4, 1e-6)):
                     str(OUT / "bench_curve_davies_R.csv"), "curve"], check=True)
     r = pd.read_csv(OUT / "bench_curve_davies_R.csv")
     for _, x in r.iterrows():
-        crow.append(dict(model=x.model, method="Davies + Prop. 7, acc=1e-6", n_alpha=x.n_alpha,
+        crow.append(dict(model=x.model, method="Davies + propagation, acc=1e-6", n_alpha=x.n_alpha,
                          seconds=x.seconds, max_half_width=x.max_half_width))
     cdf = pd.DataFrame(crow)
     cdf.to_csv(OUT / "bench_curve.csv", index=False)
@@ -1723,7 +1908,7 @@ def refresh_bivariate_reference():
 
 
 def run_benchmark():
-    """Section 5.3: distribution functions, the loss, Davies + Proposition 7, strict operating points."""
+    """Section 5.3: distribution functions, the loss, Davies + Proposition 8, strict operating points."""
     if shutil.which("Rscript") is None:
         print("Rscript not found: the benchmark needs R with the package CompQuadForm; skipped", flush=True)
         return
@@ -1766,7 +1951,7 @@ def inference_job(args):
 
 
 def boundary_job(args):
-    """Plug-in estimate only, from the same random numbers as inference_job (Proposition 8(b) check)."""
+    """Plug-in estimate only, from the same random numbers as inference_job (Proposition 9(b) check)."""
     name, n, rep = args
     r0, r1 = INF_DESIGNS[name]
     m = GaussianModel(MU0, MU1, biv_cov(r0), biv_cov(r1))
@@ -1831,7 +2016,7 @@ def run_inference(workers=6):
     df.to_csv(OUT / "inference_sim.csv", index=False)
     ckpt.unlink()
     summ = inference_summary(df)
-    # Proposition 8(b): where the loss vanishes, the plug-in bias is approximately tr(H V)/2; checked
+    # Proposition 9(b): where the loss vanishes, the plug-in bias is approximately tr(H V)/2; checked
     # against the mean of INF_BOUNDARY_REPS plug-in estimates (the first INF_REPS are those of df)
     for c in ("bias_theory", "hessian_rank", "bias_large", "bias_large_mcse"):
         summ[c] = np.nan
@@ -2543,7 +2728,7 @@ def _pow10(v):
 def table_bench_pl():
     b = pd.read_csv(OUT / "bench_pl.csv")
     dv = pd.read_csv(OUT / "bench_pl_davies.csv")
-    dv = dv[(dv.method == "Davies + Prop. 7") & (dv.alpha == 0.05)]
+    dv = dv[(dv.method == "Davies + propagation") & (dv.alpha == 0.05)]
     rows = []
     for model, d in b.groupby("model", sort=False):
         for _, r in d.iterrows():
@@ -2554,7 +2739,7 @@ def table_bench_pl():
                 if r.setting == "eps=1e-10":
                     for _, x in dv[dv.model == model].iterrows():
                         acc = _pow10(float(x.setting.split("=")[1]))
-                        rows.append(f"{model} & Davies + Prop.~7, acc $={acc}$ & {x.PL:.6f} & ${sci(x.precision)}$ & "
+                        rows.append(f"{model} & Davies + Prop.~8, acc $={acc}$ & {x.PL:.6f} & ${sci(x.precision)}$ & "
                                     f"{_secs(x.seconds)} & --- & --- \\\\")
             else:
                 n = int(float(r.setting.split("=")[1]))
@@ -2578,7 +2763,7 @@ def table_bench_pl():
 def table_bench_strict():
     d = pd.read_csv(OUT / "bench_pl_davies.csv")
     eb = d[d.method == "error-bounded"].set_index(["model", "alpha"])
-    dv = d[(d.method == "Davies + Prop. 7")].copy()
+    dv = d[(d.method == "Davies + propagation")].copy()
     dv["acc"] = dv.setting.str.split("=").str[1].astype(float)
     rows = []
     for model in dict.fromkeys(d.model):
@@ -2657,7 +2842,7 @@ def table_bench_compact():
                 e = b[(b.model == model) & (b.setting == "eps=1e-10")].iloc[0]
             else:
                 e = d[(d.model == model) & (d.alpha == a) & (d.method == "error-bounded")].iloc[0]
-            x = d[(d.model == model) & (d.alpha == a) & (d.method == "Davies + Prop. 7") & (d.setting == "acc=1e-10")]
+            x = d[(d.model == model) & (d.alpha == a) & (d.method == "Davies + propagation") & (d.setting == "acc=1e-10")]
             dv = (f"${sci(x.precision.iloc[0])}$ & {_secs(x.seconds.iloc[0])}"
                   if len(x) and np.isfinite(x.precision.iloc[0]) else "failed & ---")
             alab = "0.05" if a == 0.05 else f"${_pow10(a)}$"
@@ -2745,14 +2930,134 @@ def table_proportional():
             + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
+def _sig3(v):
+    """Three significant digits; LaTeX scientific notation below 10^-3."""
+    m, e = f"{v:.2e}".split("e")
+    e = int(e)
+    if e >= 0:
+        return f"{v:.3f}"
+    if e >= -3:
+        return f"{v:.{2 - e}f}"
+    return f"{m}\\times10^{{{e}}}"
+
+
+WEAK_LABELS = {"(0,rho)": "$(0,\\rho)$", "(rho,0)": "$(\\rho,0)$", "(rho,rho)": "$(\\rho,\\rho)$", "(rho,-rho)": "$(\\rho,-\\rho)$"}
+
+
+def _table(caption, label, cols, header, rows, size="\\small"):
+    return ("\\begin{table}[t]\n\\caption{" + caption + "}\\label{" + label + "}\n" + size + "\n"
+            "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}" + cols + "@{}}\n\\toprule\n" + header + "\\\\\n\\midrule\n"
+            + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
+
+
+def table_zero_loss():
+    d = pd.read_csv(OUT / "zero_loss.csv")
+    name = {"shared": "shared $\\bm\\Sigma$, $\\bm\\delta\\propto(1,1)^\\top$",
+            "equal correlations": "equal means, $\\rho_0=\\rho_1=-0.46$, variances $(1,2)$ and $(2,1)$",
+            "random p=3": "random, $p=3$, equal means"}
+    rows = []
+    for _, r in d.iterrows():
+        lab = name.get(r.case) or (f"equal means, $\\rho_0=0.3$, $\\rho_1=0.6$, variances $(1,1)$ and $(k,k)$, "
+                                   f"$k={r.k:.5g}$")
+        res = "0" if r.residual == 0 else f"${sci(r.residual, 0)}$"
+        rows.append(f"{lab} & ${r.c:.4f}$ & {res} & {'yes' if r.contains_zero else 'no'} & ${sci(r.max_halfwidth)}$ & "
+                    f"${sci(r.perturbed_min_lower)}$\\\\")
+    return _table("Configurations satisfying condition (iv) of Theorem~4: the constant $c$, the residual of (iv), whether the "
+                  "enclosures of $\\PL(\\alpha)$ at $\\alpha\\in\\{0.3,0.05,10^{-3},10^{-5}\\}$ ($\\varepsilon=10^{-12}$) all contain "
+                  "zero, their largest half-width, and the smallest lower end of the enclosures after the correlation of "
+                  "class~1 is changed by 0.02", "tab:zeroloss", "p{5.2cm}ccccc",
+                  "configuration & $c$ & residual & contains 0 & half-width & perturbed", rows, "\\footnotesize")
+
+
+def table_one_diagonal():
+    d = pd.read_csv(OUT / "one_diagonal.csv")
+    rows = [f"{p} & {len(g)} & {int((g.min_lower > 0).sum())} & ${sci(g.min_lower.min())}$\\\\" for p, g in d.groupby("p")]
+    return _table("Corollary~1(b): random models in which class~0 has a diagonal and class~1 a random covariance matrix. "
+                  "Number of models whose enclosures of $\\PL(\\alpha)$ lie above zero at all four levels of "
+                  "Table~\\ref{tab:zeroloss}, and the smallest lower end", "tab:onediag", "cccc",
+                  "$p$ & models & positive at all four levels & smallest lower end", rows)
+
+
+def table_weak_hessian():
+    d = pd.read_csv(OUT / "weak_dependence.csv")
+    d = d[d.part == "hessian"].set_index("item")
+    lab = {"rho0rho0": "$H_{\\rho_0\\rho_0}$", "rho1rho1": "$H_{\\rho_1\\rho_1}$", "rho0rho1": "$H_{\\rho_0\\rho_1}$"}
+    rows = [f"{lab[k]} & ${d.loc[k, 'approx']:.4f}$ & ${d.loc[k, 'exact']:.4f}$\\\\" for k in lab]
+    return _table("Hessian of $\\PL(0.05)$ in the correlations $(\\rho_0,\\rho_1)$ at (N,N): closed form from Proposition~5 "
+                  "and Corollary~2 against central second differences of error-bounded values with the steps used in "
+                  "Section~6", "tab:weakhessian", "lcc", "entry & closed form & second differences", rows)
+
+
+def table_weak_bivariate():
+    d = pd.read_csv(OUT / "weak_dependence.csv")
+    d = d[d.part == "bivariate"]
+    rows = []
+    for i, (a, g) in enumerate(d.groupby("alpha", sort=False)):
+        if i:
+            rows.append("\\midrule")
+        for _, r in g.iterrows():
+            rows.append(f"{a:g} & {WEAK_LABELS[r['item']]} & {r.rho:g} & ${_sig3(r.exact)}$ & ${_sig3(r.approx)}$ & {r.ratio:.3f}\\\\")
+    return _table("Bivariate design with unit variances and correlations $(\\rho_0,\\rho_1)$ along four directions: "
+                  "error-bounded $\\PL(\\alpha)$ ($\\varepsilon=10^{-11}$) and the second-order approximation of "
+                  "Corollary~2, with their ratio", "tab:weakbiv", "lllccc",
+                  "$\\alpha$ & $(\\rho_0,\\rho_1)$ & $\\rho$ & error-bounded & Corollary~2 & ratio", rows, "\\footnotesize")
+
+
+def table_weak_p5():
+    d = pd.read_csv(OUT / "weak_dependence.csv")
+    d = d[d.part == "p5"]
+    rows = []
+    for i, (m, g) in enumerate(d.groupby("item", sort=False)):
+        if i:
+            rows.append("\\midrule")
+        rows += [f"{m} & {r.rho:g} & ${_sig3(r.exact)}$ & ${_sig3(r.approx)}$ & {r.ratio:.3f}\\\\" for _, r in g.iterrows()]
+    return _table("Three random models with $p=5$, unit variances, mean separation 2 and correlation matrices "
+                  "$\\bm I+\\epsilon\\bm E_y$, where $\\bm E_y$ are random symmetric matrices with zero diagonal and spectral "
+                  "radius one: error-bounded $\\PL(0.05)$ and Corollary~2", "tab:weakp5", "ccccc",
+                  "model & $\\epsilon$ & error-bounded & Corollary~2 & ratio", rows)
+
+
+def table_weak_unequal():
+    d = pd.read_csv(OUT / "weak_dependence.csv")
+    d = d[d.part == "unequal"]
+    rows = []
+    for i, (k, g) in enumerate(d.groupby("item", sort=False)):
+        if i:
+            rows.append("\\midrule")
+        rows += [f"{WEAK_LABELS[k]} & {r.rho:g} & ${_sig3(r.exact)}$ & ${_sig3(r.approx)}$ & {r.ratio:.3f}\\\\"
+                 for _, r in g.iterrows()]
+    n = f"{int(d.band.iloc[0]):,}".replace(",", "\\,")
+    return _table("Unequal marginal variances, $(1,1)$ in class~0 and $(1,2)$ in class~1, with correlations along three "
+                  "directions: error-bounded $\\PL(0.05)$ and Proposition~5, whose constant $f_{f,1}(t)\\operatorname{Var}"
+                  "\\{U(\\bm X)\\mid Q_f(\\bm X)=t\\}$ is estimated by Monte Carlo from $8\\times10^6$ draws per class "
+                  "(" + n + " class-0 draws in a band of half-width 0.01 standard deviations around the threshold)",
+                  "tab:weakunequal", "llccc", "$(\\rho_0,\\rho_1)$ & $\\rho$ & error-bounded & Proposition~5 & ratio", rows)
+
+
+def table_weak_beyond():
+    d = pd.read_csv(OUT / "weak_dependence.csv")
+    d = d[d.part == "beyond"]
+    rows = []
+    for _, r in d.iterrows():
+        r0, r1 = r['item'].strip("()").split(",")
+        rows.append(f"{r['item']} & {BIV_LEVELS[r0]:g} & {BIV_LEVELS[r1]:g} & ${_sig3(r.exact)}$ & ${_sig3(r.approx)}$ & "
+                    f"{r.ratio:.2f}\\\\")
+    return _table("Corollary~2 outside the regime of weak dependence, at configurations of the bivariate design "
+                  "($\\alpha=0.05$)", "tab:weakbeyond", "lccccc",
+                  "configuration & $\\rho_0$ & $\\rho_1$ & error-bounded & Corollary~2 & ratio", rows)
+
+
 def latex_tables():
-    """LaTeX source of Tables 1 to 5 of the paper and S1 to S5 of Online Resource 1, built from the
+    """LaTeX source of Tables 1 to 5 of the paper and S1 to S12 of Online Resource 1, built from the
     CSV files in OUT."""
     gens = {"table1_bivariate": table_biv, "table2_ar1": table_ar1, "table3_benchmark": table_bench_compact,
             "table4_inference": table_inference, "table5_bssr1": lambda: table_bssr1(with_se=True),
             "tableS1_benchmark_cdf": table_bench_cdf, "tableS2_benchmark_pl": table_bench_pl,
             "tableS3_strict_operating_points": table_bench_strict, "tableS4_explicit_approximations": table_explicit_approx,
-            "tableS5_proportional": table_proportional}
+            "tableS5_proportional": table_proportional, "tableS6_zero_loss": table_zero_loss,
+            "tableS7_one_diagonal": table_one_diagonal, "tableS8_weak_hessian": table_weak_hessian,
+            "tableS9_weak_bivariate": table_weak_bivariate, "tableS10_weak_p5": table_weak_p5,
+            "tableS11_weak_unequal": table_weak_unequal, "tableS12_weak_beyond": table_weak_beyond}
     out = {}
     for name, gen in gens.items():
         try:
@@ -2773,7 +3078,7 @@ def write_tables():
 # =============================================================================================
 # Part 11. Command line: reproduce everything in one run
 # =============================================================================================
-STEPS = ("tests", "bivariate", "explicit", "highdim", "benchmark", "inference", "bssr1", "figures", "tables")
+STEPS = ("tests", "bivariate", "explicit", "structure", "highdim", "benchmark", "inference", "bssr1", "figures", "tables")
 
 
 def main(argv=None):
@@ -2806,6 +3111,8 @@ def main(argv=None):
             run_bivariate()
         elif step == "explicit":
             run_explicit()
+        elif step == "structure":
+            run_structure()
         elif step == "highdim":
             run_highdim(args.workers)
         elif step == "benchmark":

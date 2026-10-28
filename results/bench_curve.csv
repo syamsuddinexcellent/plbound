@@ -3,7 +3,7 @@ model,method,n_alpha,seconds,max_half_width
 "biv (L,H)",error-bounded FFT grid,60,7.324369374999996,3.868474698243141e-06
 random p=10,error-bounded FFT grid,60,4.05129925,2.099417434064943e-06
 random p=50,error-bounded FFT grid,60,6.196259625000003,1.1272638458237338e-06
-"biv (N,P)","Davies + Prop. 6, acc=1e-6",60,1.857,0.0004905027862072
-"biv (L,H)","Davies + Prop. 6, acc=1e-6",60,0.703,0.0002081675841133
-random p=10,"Davies + Prop. 6, acc=1e-6",60,0.0629999999999997,0.0011951090707051
-random p=50,"Davies + Prop. 6, acc=1e-6",60,0.104,0.0016722679405137
+"biv (N,P)","Davies + propagation, acc=1e-6",60,1.857,0.0004905027862072
+"biv (L,H)","Davies + propagation, acc=1e-6",60,0.703,0.0002081675841133
+random p=10,"Davies + propagation, acc=1e-6",60,0.0629999999999997,0.0011951090707051
+random p=50,"Davies + propagation, acc=1e-6",60,0.104,0.0016722679405137
