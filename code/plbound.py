@@ -1375,11 +1375,32 @@ def weak_hessian_p2(mu0, mu1, alpha):
 WEAK_DIRECTIONS = {"(0,rho)": (0, 1), "(rho,0)": (1, 0), "(rho,rho)": (1, 1), "(rho,-rho)": (1, -1)}
 
 
-def weak_dependence_check(eps=1e-11, n_mc=8_000_000):
+def weak_constant_unequal(alpha, r0, r1, v2):
+    """Constant of Proposition 5, (1/2) f^L_{f,1}(tau) Var{U | L_f = tau} on the scale of L_f, for the
+    bivariate design with diagonal covariance matrices diag(1, 1) and diag(1, v2) and correlations
+    rho (r0, r1) along the path. With equal variances, x_1 enters L_f linearly, L_f = s x_1 + k + h(x_2), so
+    the level set {L_f = tau} is the graph x_1 = (tau - k - h(x_2))/s, on which the co-area density
+    p_0/|grad L_f| dH^1 becomes p_0/s dx_2: everything reduces to one-dimensional quadrature."""
+    (m01, m02), (m11, m12) = MU0, MU1
+    s, k = m11 - m01, -(m11 ** 2 - m01 ** 2) / 2
+    h = lambda x2: (x2 - m02) ** 2 / 2 - (x2 - m12) ** 2 / (2 * v2) - 0.5 * math.log(v2)
+    x1 = lambda x2, tau: (tau - k - h(x2)) / s
+    quad = lambda f: integrate.quad(f, m02 - 12, m02 + 12, limit=400, epsabs=1e-14, epsrel=1e-12)[0]
+    # threshold of L_f at false positive rate alpha (s > 0, so L_f > tau iff x_1 > x1(x_2, tau))
+    tail = lambda tau: quad(lambda x2: special.ndtr(m01 - x1(x2, tau)) * stats.norm.pdf(x2 - m02)) - alpha
+    tau = optimize.brentq(tail, -30, 30, xtol=1e-14)
+    p0 = lambda x2: stats.norm.pdf(x1(x2, tau) - m01) * stats.norm.pdf(x2 - m02) / s
+    U = lambda x2: (r0 * (x1(x2, tau) - m01) * (x2 - m02) - r1 * (x1(x2, tau) - m11) * (x2 - m12) / math.sqrt(v2))
+    f0 = quad(p0)                                       # density of L_f in class 0 at tau
+    m1, m2 = quad(lambda x2: U(x2) * p0(x2)) / f0, quad(lambda x2: U(x2) ** 2 * p0(x2)) / f0
+    return 0.5 * math.exp(tau) * f0 * (m2 - m1 ** 2)
+
+
+def weak_dependence_check(eps=1e-11):
     """Proposition 5 and Corollary 2 against error-bounded losses (results/weak_dependence.csv): the
     Hessian at (N,N), the bivariate design with unit variances, three random models with p = 5, unequal
-    marginal variances (the conditional variance of Proposition 5 by Monte Carlo) and configurations
-    beyond weak dependence."""
+    marginal variances (the constant of Proposition 5 by quadrature) and configurations beyond weak
+    dependence."""
     exact = lambda mu0, mu1, S0, S1, a: performance_loss(GaussianModel(mu0, mu1, S0, S1), a, eps, with_auc=False)["PL"]
     rows = []
     Hn = pl_hessian(GaussianModel(MU0, MU1, np.eye(2), np.eye(2)), 0.05, idx=[5, 8])   # vech entries (2,1)
@@ -1408,25 +1429,16 @@ def weak_dependence_check(eps=1e-11, n_mc=8_000_000):
             ex = exact(np.zeros(p), mu1, np.eye(p) + E0, np.eye(p) + E1, 0.05)
             rows.append(dict(part="p5", item=str(case + 1), rho=e_, alpha=0.05, exact=ex.mid, hw=ex.half_width,
                              approx=weak_equal_var(np.zeros(p), mu1, E0, E1, 0.05)))
-    # unequal variances (1, 1) and (1, 2): f_{f,1}(t) Var(U | L_f = t) by Monte Carlo in a band around t
-    d0, d1, mc = np.array([1.0, 1.0]), np.array([1.0, 2.0]), np.random.default_rng(11)
-    Lf = lambda x: 0.5 * (((x - MU0) ** 2 / d0).sum(1) + np.log(d0).sum() - ((x - MU1) ** 2 / d1).sum(1) - np.log(d1).sum())
-    X0 = MU0 + mc.standard_normal((n_mc, 2)) * np.sqrt(d0)
-    X1 = MU1 + mc.standard_normal((n_mc, 2)) * np.sqrt(d1)
-    L0, L1 = Lf(X0), Lf(X1)
-    t = np.quantile(L0, 0.95)
-    h = 0.01 * L0.std()
-    band = np.abs(L0 - t) < h
-    f1 = (np.abs(L1 - t) < h).mean() / (2 * h)          # density of L_f in class 1 at t
-    u, v = (X0[band] - MU0) / np.sqrt(d0), (X0[band] - MU1) / np.sqrt(d1)
-    for name, (r0, r1) in list(WEAK_DIRECTIONS.items())[:3]:
-        coef = 0.5 * f1 * (r0 * u[:, 0] * u[:, 1] - r1 * v[:, 0] * v[:, 1]).var()
+    # unequal variances (1, 1) and (1, 2): the constant of Proposition 5 by one-dimensional quadrature
+    d0, d1 = np.array([1.0, 1.0]), np.array([1.0, 2.0])
+    for name, (r0, r1) in WEAK_DIRECTIONS.items():
+        coef = weak_constant_unequal(0.05, r0, r1, d1[1])
         for rho in (0.2, 0.1, 0.05):
             S0 = np.sqrt(np.outer(d0, d0)) * (np.eye(2) + rho * r0 * J2)
             S1 = np.sqrt(np.outer(d1, d1)) * (np.eye(2) + rho * r1 * J2)
             ex = exact(MU0, MU1, S0, S1, 0.05)
             rows.append(dict(part="unequal", item=name, rho=rho, alpha=0.05, exact=ex.mid, hw=ex.half_width,
-                             approx=coef * rho ** 2, band=int(band.sum())))
+                             approx=coef * rho ** 2))
     for r0n, r1n in (("L", "L"), ("L", "H"), ("H", "H"), ("N", "P")):
         E0, E1 = BIV_LEVELS[r0n] * J2, BIV_LEVELS[r1n] * J2
         ex = exact(MU0, MU1, np.eye(2) + E0, np.eye(2) + E1, 0.05)
@@ -2984,8 +2996,8 @@ def table_weak_hessian():
     lab = {"rho0rho0": "$H_{\\rho_0\\rho_0}$", "rho1rho1": "$H_{\\rho_1\\rho_1}$", "rho0rho1": "$H_{\\rho_0\\rho_1}$"}
     rows = [f"{lab[k]} & ${d.loc[k, 'approx']:.4f}$ & ${d.loc[k, 'exact']:.4f}$\\\\" for k in lab]
     return _table("Hessian of $\\PL(0.05)$ in the correlations $(\\rho_0,\\rho_1)$ at (N,N): closed form from Proposition~5 "
-                  "and Corollary~2 against central second differences of error-bounded values with the steps used in "
-                  "Section~6", "tab:weakhessian", "lcc", "entry & closed form & second differences", rows)
+                  "and Corollary~2 against central second differences of error-bounded values with relative step 0.05, "
+                  "as used for the bias in Section~6", "tab:weakhessian", "lcc", "entry & closed form & second differences", rows)
 
 
 def table_weak_bivariate():
@@ -3026,11 +3038,10 @@ def table_weak_unequal():
             rows.append("\\midrule")
         rows += [f"{WEAK_LABELS[k]} & {r.rho:g} & ${_sig3(r.exact)}$ & ${_sig3(r.approx)}$ & {r.ratio:.3f}\\\\"
                  for _, r in g.iterrows()]
-    n = f"{int(d.band.iloc[0]):,}".replace(",", "\\,")
-    return _table("Unequal marginal variances, $(1,1)$ in class~0 and $(1,2)$ in class~1, with correlations along three "
+    return _table("Unequal marginal variances, $(1,1)$ in class~0 and $(1,2)$ in class~1, with correlations along four "
                   "directions: error-bounded $\\PL(0.05)$ and Proposition~5, whose constant $f_{f,1}(t)\\operatorname{Var}"
-                  "\\{U(\\bm X)\\mid Q_f(\\bm X)=t\\}$ is estimated by Monte Carlo from $8\\times10^6$ draws per class "
-                  "(" + n + " class-0 draws in a band of half-width 0.01 standard deviations around the threshold)",
+                  "\\{U(\\bm X)\\mid Q_f(\\bm X)=t\\}$ is computed by one-dimensional quadrature over the level set "
+                  "$\\{Q_f=t\\}$, a graph over $x_2$ because $x_1$ enters $Q_f$ linearly",
                   "tab:weakunequal", "llccc", "$(\\rho_0,\\rho_1)$ & $\\rho$ & error-bounded & Proposition~5 & ratio", rows)
 
 

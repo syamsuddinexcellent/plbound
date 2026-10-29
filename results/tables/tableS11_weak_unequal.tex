@@ -1,21 +1,25 @@
 \begin{table}[t]
-\caption{Unequal marginal variances, $(1,1)$ in class~0 and $(1,2)$ in class~1, with correlations along three directions: error-bounded $\PL(0.05)$ and Proposition~5, whose constant $f_{f,1}(t)\operatorname{Var}\{U(\bm X)\mid Q_f(\bm X)=t\}$ is estimated by Monte Carlo from $8\times10^6$ draws per class (12\,758 class-0 draws in a band of half-width 0.01 standard deviations around the threshold)}\label{tab:weakunequal}
+\caption{Unequal marginal variances, $(1,1)$ in class~0 and $(1,2)$ in class~1, with correlations along four directions: error-bounded $\PL(0.05)$ and Proposition~5, whose constant $f_{f,1}(t)\operatorname{Var}\{U(\bm X)\mid Q_f(\bm X)=t\}$ is computed by one-dimensional quadrature over the level set $\{Q_f=t\}$, a graph over $x_2$ because $x_1$ enters $Q_f$ linearly}\label{tab:weakunequal}
 \small
 \begin{tabular*}{\textwidth}{@{\extracolsep\fill}llccc@{}}
 \toprule
 $(\rho_0,\rho_1)$ & $\rho$ & error-bounded & Proposition~5 & ratio\\
 \midrule
-$(0,\rho)$ & 0.2 & $0.00173$ & $0.00203$ & 1.178\\
-$(0,\rho)$ & 0.1 & $4.63\times10^{-4}$ & $5.09\times10^{-4}$ & 1.099\\
-$(0,\rho)$ & 0.05 & $1.19\times10^{-4}$ & $1.27\times10^{-4}$ & 1.068\\
+$(0,\rho)$ & 0.2 & $0.00173$ & $0.00195$ & 1.127\\
+$(0,\rho)$ & 0.1 & $4.63\times10^{-4}$ & $4.87\times10^{-4}$ & 1.052\\
+$(0,\rho)$ & 0.05 & $1.19\times10^{-4}$ & $1.22\times10^{-4}$ & 1.022\\
 \midrule
-$(\rho,0)$ & 0.2 & $0.00412$ & $0.00502$ & 1.219\\
-$(\rho,0)$ & 0.1 & $0.00112$ & $0.00125$ & 1.119\\
-$(\rho,0)$ & 0.05 & $2.94\times10^{-4}$ & $3.14\times10^{-4}$ & 1.067\\
+$(\rho,0)$ & 0.2 & $0.00412$ & $0.00494$ & 1.201\\
+$(\rho,0)$ & 0.1 & $0.00112$ & $0.00124$ & 1.102\\
+$(\rho,0)$ & 0.05 & $2.94\times10^{-4}$ & $3.09\times10^{-4}$ & 1.051\\
 \midrule
-$(\rho,\rho)$ & 0.2 & $0.00212$ & $0.00181$ & 0.852\\
-$(\rho,\rho)$ & 0.1 & $4.87\times10^{-4}$ & $4.52\times10^{-4}$ & 0.929\\
-$(\rho,\rho)$ & 0.05 & $1.17\times10^{-4}$ & $1.13\times10^{-4}$ & 0.962\\
+$(\rho,\rho)$ & 0.2 & $0.00212$ & $0.00182$ & 0.860\\
+$(\rho,\rho)$ & 0.1 & $4.87\times10^{-4}$ & $4.56\times10^{-4}$ & 0.938\\
+$(\rho,\rho)$ & 0.05 & $1.17\times10^{-4}$ & $1.14\times10^{-4}$ & 0.971\\
+\midrule
+$(\rho,-\rho)$ & 0.2 & $0.00860$ & $0.0120$ & 1.390\\
+$(\rho,-\rho)$ & 0.1 & $0.00252$ & $0.00299$ & 1.188\\
+$(\rho,-\rho)$ & 0.05 & $6.89\times10^{-4}$ & $7.47\times10^{-4}$ & 1.084\\
 \botrule
 \end{tabular*}
 \end{table}
