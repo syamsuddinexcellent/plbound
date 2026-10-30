@@ -17,10 +17,10 @@ This single file is both
       python plbound.py
 
   It runs the exactness tests, the checks of Sections 3.4 and 3.5, the studies of Section 5, the
-  simulation study of Section 6 and the application of Section 7, and writes the CSV files to ../results, the figures to
-  ../results/figures and the LaTeX tables to ../results/tables. The full run takes about three and
-  a half hours on a laptop (Apple M1, seven worker processes), most of it for the simulation study of
-  Section 6, which can be interrupted and resumed; Section 7 needs about 8 GB of memory.
+  simulation study of Section 6 and the application of Section 7, and writes the CSV files to
+  ../results, the figures to ../results/figures and the LaTeX tables to ../results/tables. The full
+  run takes about three and a half hours on a laptop (Apple M1, --workers 7), most of it for the
+  simulation study of Section 6, which can be interrupted and resumed; Section 7 needs about 8 GB of memory.
 
 Requirements: Python >= 3.9 with numpy, scipy, pandas and matplotlib. The benchmark of
 Section 5.3 also calls R (Rscript) with the package CompQuadForm, and Section 7 needs the NIST
@@ -172,7 +172,7 @@ class GenChi2:
 
     def _chernoff(self, c, upper):
         """log of the Chernoff bound on P(Q >= c) (upper) or P(Q <= c) (lower).
-        Any admissible s gives a valid bound, so an imperfect minimisation is still rigorous."""
+        Any admissible s gives a valid bound, so an imperfect minimization is still rigorous."""
         s_lo, s_hi = self.s_range()
         scale = 1.0 / max(self.sd, 1e-300)
         if upper:
@@ -437,7 +437,7 @@ class ErrorBoundedCDF:
         return F_hat, e_alias + e_trunc + self._round_bound(K, x)
 
     def __call__(self, x):
-        """Return (F_hat, error_bound); vectorised over x."""
+        """Return (F_hat, error_bound); vectorized over x."""
         x = np.asarray(x, float)
         if x.ndim == 0:
             return self._one(float(x))
@@ -2434,7 +2434,7 @@ def _init_matplotlib():
 def _save_fig(fig, name):
     folder = FIG_DIR or OUT / "figures"
     folder.mkdir(parents=True, exist_ok=True)
-    fig.savefig(folder / name)
+    fig.savefig(folder / name, metadata={"CreationDate": None})      # no time stamp in the PDF
     plt.close(fig)
     print("wrote", folder / name)
 
@@ -2613,7 +2613,8 @@ def fig6_bssr1():
 
 def make_figures():
     """Figures 1 to 5 of the paper and Figure S1 of Online Resource 1 (vector PDF). The files keep the
-    numbering of an earlier draft: Fig4.pdf is Figure S1, and Fig5.pdf and Fig6.pdf are Figures 4 and 5."""
+    file names follow the order in which the script makes them: Fig4.pdf is Figure S1, and Fig5.pdf and
+    Fig6.pdf are Figures 4 and 5."""
     _init_matplotlib()
     for fig in (fig1_heatmaps, fig2_curves, fig3_transposition, fig4_mc, fig5_highdim, fig6_bssr1):
         try:
@@ -2721,7 +2722,7 @@ def table_bench_cdf():
     return ("\\begin{table}[t]\n\\caption{Distribution-function benchmark over " + f"{n}" +
             " evaluation points (seven generalized chi-square laws at five quantile levels from $10^{-4}$ to "
             "$1-10^{-4}$). Errors are absolute errors with respect to the reference values described in Section~\\ref{sec:bench}; for Davies's "
-            "method, failures are calls returning a non-zero fault indicator and are excluded from the error. "
+            "method, failures are calls returning a nonzero fault indicator and are excluded from the error. "
             "Times in milliseconds; acc is the accuracy requested from Davies's method and lim its maximal number of integration terms (default $10^4$, otherwise $10^8$)}\\label{tab:benchcdf}\n\\footnotesize\\setlength{\\tabcolsep}{4pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}llccccc@{}}\n\\toprule\n"
             "method & setting & max.\\ error & within bound & failures & median (ms) & max.\\ (ms)\\\\\n"
@@ -2758,7 +2759,7 @@ def table_bench_pl():
                 mins = r["seconds_for_1e-4"] / 60
                 days = r["seconds_for_1e-6"] / 86400
                 rows.append(f"{model} & Monte Carlo, $N=10^{{{int(np.log10(n))}}}$ & {r.PL:.6f} & "
-                            f"${sci(r.precision)}$ & {r.seconds:.3f} & {mins:.0f} & {days:,.0f} \\\\")
+                            f"${sci(r.precision)}$ & {r.seconds:.3f} & {mins:.0f} & {days:.0f} \\\\")
         rows.append("\\midrule")
     return ("\\begin{table}[t]\n\\caption{Computing $\\PL(0.05)$: error-bounded enclosures, Davies's algorithm combined "
             "with Proposition~\\ref{prop:prop}, and the Monte Carlo "
@@ -2831,10 +2832,12 @@ def table_bssr1(with_se=False):
                         f"$[{pp(r.PL_emp_q025)}, {pp(r.PL_emp_q975)}]$ & ${pp(r.PL_pboot_mean)}$ "
                         f"$({100 * r.PL_pboot_sd:.2f})$\\\\")
         rows.append("\\midrule")
+    hw = pd.read_csv(OUT / "bssr1_fullfit.csv").filter(like="PL_model_hw").to_numpy().max()
+    hw_pp = f"10^{{{math.ceil(math.log10(100 * hw))}}}"         # in percentage points, like the table
     return ("\\begin{table}[t]\n\\caption{BSSR1 fusion; losses in percentage points. Correlations are those of "
             "the transformed genuine/impostor scores (largest absolute value for four matchers). Model: "
             "error-bounded $\\PL(\\alpha)$ of the Gaussian model fitted to all subjects (half-widths below "
-            "$10^{-8}$)" + (", with its half-sampling standard error over subjects in parentheses" if with_se else "")
+            "$" + hw_pp + "$ percentage points)" + (", with its half-sampling standard error over subjects in parentheses" if with_se else "")
             + ". Held-out: mean empirical loss over 50 subject-disjoint 50/50 splits, with 2.5\\% and "
             "97.5\\% quantiles (a positive mean with both quantiles 0.00 means that most splits give a loss of exactly zero). Bootstrap: mean (standard deviation) of the same held-out loss for data "
             "simulated from the fitted Gaussian model}\\label{tab:bssr1}\n\\footnotesize\\setlength{\\tabcolsep}{"
@@ -2912,8 +2915,10 @@ def table_explicit_approx():
                      ("relative error below 10\\%", lambda e, x: f"{int(((e / pos.PL) < 0.1).sum())}")):
         vals = [fn((pos[c] - pos.PL).abs(), pos[c]) for c in ("PL_normal", "PL_cf")]
         summ.append(f"\\multicolumn{{3}}{{l}}{{{name} ({len(pos)} cases)}} & {vals[0]} & {vals[1]}\\\\")
+    hw = d.groupby("alpha").PL_hw.max()
     return ("\\begin{table}[t]\n\\caption{Explicit cumulant approximations of $\\PL(\\alpha)$ in the bivariate design "
-            "against the error-bounded values (half-widths below $10^{-9}$). Normal: two moments; Cornish--Fisher: "
+            "against the error-bounded values (half-widths below $" + sci_up(hw[0.05]) + "$ at $\\alpha=0.05$ and $"
+            + sci_up(hw[0.01]) + "$ at $\\alpha=0.01$). Normal: two moments; Cornish--Fisher: "
             "Cornish--Fisher quantile of the class-0 score and Edgeworth tail of the class-1 score from four cumulants. "
             "The summary covers all configurations with a positive loss at $\\alpha\\in\\{0.05,0.01\\}$}"
             "\\label{tab:explicit}\n\\small\n\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}lcccc@{}}\n\\toprule\n"
@@ -2923,6 +2928,7 @@ def table_explicit_approx():
 
 def table_proportional():
     d = pd.read_csv(OUT / "proportional.csv")
+    assert d.inside.all(), "an explicit value lies outside its enclosure"
     rows, prev = [], None
     for _, r in d.iterrows():
         key = (r.rho, r.var1, r.var2, r.k, r.means)
@@ -2933,9 +2939,8 @@ def table_proportional():
         rows.append(f"{lead} & {r.alpha:g} & ${r.TPR_f_explicit:.10f}$ & ${sci(hw, 1)}$ & ${loss}$\\\\")
     return ("\\begin{table}[t]\n\\caption{Proportional covariance matrices $\\bm\\Sigma_1=k\\bm\\Sigma_0$ with correlation "
             "$\\rho$ and class-0 variances as shown: the true positive rate of the full rule from Corollary~S1 "
-            "against the half-width of its error-bounded enclosure; all " + str(int(d.inside.sum())) + " of "
-            + str(len(d)) + " explicit values lie inside their enclosures. The last column is the error-bounded "
-            "loss, which is positive by Theorem~4 because $\\rho\\ne0$; where it is below the resolution of its enclosure, "
+            "against the half-width of its error-bounded enclosure; all " + str(len(d)) + " explicit values lie inside their enclosures. The last column is the error-bounded "
+            "loss, which is positive at every $\\alpha$ by Corollary~S1 and Theorem~4 because $\\rho\\ne0$; where it is below the resolution of its enclosure, "
             "the upper end of the enclosure is shown}\\label{tab:proportional}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}cccccccc@{}}\n\\toprule\n"
             "$\\rho$ & variances & $k$ & means & $\\alpha$ & $\\TPR_f$ (Corollary S1) & half-width & $\\PL(\\alpha)$\\\\\n\\midrule\n"
