@@ -2938,12 +2938,12 @@ def table_proportional():
         loss = f"{r.PL:.6f}" if r.PL - r.PL_hw > 0 else f"\\le{sci_up(r.PL + r.PL_hw, 0)}"
         rows.append(f"{lead} & {r.alpha:g} & ${r.TPR_f_explicit:.10f}$ & ${sci(hw, 1)}$ & ${loss}$\\\\")
     return ("\\begin{table}[t]\n\\caption{Proportional covariance matrices $\\bm\\Sigma_1=k\\bm\\Sigma_0$ with correlation "
-            "$\\rho$ and class-0 variances as shown: the true positive rate of the full rule from Corollary~S1 "
+            "$\\rho$ and class-0 variances as shown: the true positive rate of the full rule from Corollary~\\ref{cor:prop} "
             "against the half-width of its error-bounded enclosure; all " + str(len(d)) + " explicit values lie inside their enclosures. The last column is the error-bounded "
-            "loss, which is positive at every $\\alpha$ by Corollary~S1 and Theorem~4 because $\\rho\\ne0$; where it is below the resolution of its enclosure, "
+            "loss, which is positive at every $\\alpha$ by Corollary~\\ref{cor:prop} and Theorem~\\ref{thm:zero} because $\\rho\\ne0$; where it is below the resolution of its enclosure, "
             "the upper end of the enclosure is shown}\\label{tab:proportional}\n\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
             "\\begin{tabular*}{\\textwidth}{@{\\extracolsep\\fill}cccccccc@{}}\n\\toprule\n"
-            "$\\rho$ & variances & $k$ & means & $\\alpha$ & $\\TPR_f$ (Corollary S1) & half-width & $\\PL(\\alpha)$\\\\\n\\midrule\n"
+            "$\\rho$ & variances & $k$ & means & $\\alpha$ & $\\TPR_f$ (Corollary~\\ref{cor:prop}) & half-width & $\\PL(\\alpha)$\\\\\n\\midrule\n"
             + "\n".join(rows) + "\n\\botrule\n\\end{tabular*}\n\\end{table}")
 
 
